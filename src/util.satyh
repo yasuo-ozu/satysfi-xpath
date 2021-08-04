@@ -1,0 +1,393 @@
+@require: list
+type point = length * length
+
+module XPathUtil : sig
+    %type point
+
+    val (+..) : point -> point -> point
+    val (-..) : point -> point -> point
+    val (*..) : point -> float -> point
+    val (/..) : point -> length -> float * float
+    val (=..) : point -> point -> bool
+    val point-norm : point -> length
+    val point-mul : float -> point -> point
+    val point-neg : point -> point
+    % (x2, y2)のうち(x1, y1)と平行な成分の長さ(反平行なら負の長さ)
+    val point-divide : point -> point -> length
+    % (x, y) の向きを変えずに長さをlにする
+    val point-normalize : length -> point -> point
+    val point-perp : point -> point
+    val point-perp-rev : point -> point
+    val show-point : point -> string
+
+    val float-neg : float -> float
+    val float-abs : float -> float
+    val float-min : float -> float -> float
+    val float-max : float -> float -> float
+    val float-mod : float -> float -> float
+    val float-zero-or-nan : float -> bool
+    val float-zero : float -> bool
+    val (=.) : float -> float -> bool
+    val (!=.) : float -> float -> bool
+    val (>.) : float -> float -> bool
+    val (<.) : float -> float -> bool
+    val (>=.) : float -> float -> bool
+    val (<=.) : float -> float -> bool
+
+    val eps : float
+
+    val int-abs : int -> int
+
+    val length-abs : length -> length
+    val length-neg : length -> length
+    val length-min : length -> length -> length
+    val length-max : length -> length -> length
+    val length-min-list : length -> length list -> length
+    val length-max-list : length -> length list -> length
+    val length-zero : length -> bool
+    val (=') : length -> length -> bool
+    val (!=') : length -> length -> bool
+    val (>=') : length -> length -> bool
+    val (<=') : length -> length -> bool
+    val show-length : length -> string
+
+    val list-last : 'a list -> 'a option
+
+    val overlap-bbox : point * point -> point * point -> bool
+    val concat-bbox : point * point -> point * point -> point * point
+    val overlap-closure : point * point * point * point -> point * point * point * point -> bool
+
+    val pow : float -> float -> float
+    val sqrt : float -> float
+    val cubic : float -> float
+    val square : float -> float
+    val cube : float -> float
+
+    val intersect-lines : point * point -> point * point -> bool
+    val point-in-poly : point * point * point * point -> point -> bool
+    val get-root-quadratic : float -> float -> float -> float list
+    val get-root-cubic : float -> float -> float -> float -> float list
+
+    val get-line-equation : point * point -> float * float * length
+    val get-line-line-intersects : point * point -> point * point -> (float * float) list
+    val linear-to-position : float -> float
+    val get-position-in-line : point * point -> point -> float
+
+    val range : float -> float -> int -> float list
+    val range-span : float -> float -> int -> (float * float) list
+
+    val display-point : string -> point -> unit
+    val display-length : string -> length -> unit
+    val display-float : string -> float -> unit
+    val display-int : string -> int -> unit
+    val display-point4 : string -> point * point * point * point -> unit
+    val display-list : string -> (string -> 'a -> unit) -> 'a list -> unit
+    val display-in-cont : unit -> 'a -> 'a
+    val display-cont : ('a -> unit) -> 'a -> 'a
+
+end = struct
+    %type point = length * length
+    let display-point name (x, y) =
+        display-message (name ^ #` = `# ^ (show-float (x /' 1cm) ^ `, ` ^ (show-float (y /' 1cm))))
+    let display-length name l =
+        display-message (name ^ #` = `# ^ (show-float (l /' 1cm) ))
+    let display-float name l =
+        display-message (name ^ #` = `# ^ (show-float (l) ))
+    let display-int name l =
+        display-message (name ^ #` = `# ^ (arabic (l) ))
+    let display-point4 name ((x1, y1), (x2, y2), (x3, y3), (x4, y4)) =
+        display-message (name ^ #` = `#
+            ^ (show-float (x1 /' 1cm) ^ `, ` ^ (show-float (y1 /' 1cm))) ^ `, `#
+            ^ (show-float (x2 /' 1cm) ^ `, ` ^ (show-float (y2 /' 1cm))) ^ `, `#
+            ^ (show-float (x3 /' 1cm) ^ `, ` ^ (show-float (y3 /' 1cm))) ^ `, `#
+            ^ (show-float (x4 /' 1cm) ^ `, ` ^ (show-float (y4 /' 1cm))) ^ `, `#
+        )
+    let display-list name f lst =
+        lst |> List.iteri (fun i item ->
+            (
+                let name = name ^ `[` ^ (arabic i) ^ `]` in
+                f name item
+            )
+        )
+
+    let display-in-cont _ a = a
+    let display-cont f a = f a before a
+
+
+    let float-neg a = (0. -. 1.) *. a
+    let float-zero-or-nan a = not (1pt *' a <' 1pt *' (float-neg a) || 1pt *' a >' 1pt *' (float-neg a))
+    let float-zero a = float-zero-or-nan a && not float-zero-or-nan (a +. 1.)
+    let (=.) a b = float-zero (a -. b)
+    let (!=.) a b = not (float-zero (a -. b))
+    let (>.) a b = 1pt *' a >' 1pt *' b
+    let (<.) a b = 1pt *' a <' 1pt *' b
+    let (>=.) a b = a >. b || a =. b
+    let (<=.) a b = a <. b || a =. b
+    let float-abs a = if 1pt *' a >' 0pt then a else (0. -. 1.) *. a
+    let float-min a b = if a <. b then a else b
+    let float-max a b = if a >. b then a else b
+    let float-mod a b = a -. b *. (float (round (a /. b)))
+
+    let int-abs a = if a > 0 then a else 0 - a
+
+    let pow a b = exp (b *. (log a))
+    let sqrt a = pow a 0.5
+    let cubic a = pow a (1.0 /. 3.0)
+    let square a = a *. a
+    let cube a = a *. a *. a
+    let length-abs l = if l >' 0pt then l else 0pt -' l
+    let length-zero l = ((length-abs l) /' 1pt) |> float-zero
+    let length-neg l = l *' (float-neg 1.)
+    let length-min l1 l2 = if l1 <' l2 then l1 else l2
+    let length-max l1 l2 = if l2 <' l1 then l1 else l2
+    let length-min-list l0 llst =
+        List.fold-left length-min l0 llst
+    let length-max-list l0 llst =
+        List.fold-left length-max l0 llst
+    let show-length l =
+        let s-cm = (show-float (l /' 1cm)) ^ `cm` in
+        let s-mm = (show-float (l /' 1mm)) ^ `mm` in
+        let s-pt = (show-float (l /' 1pt)) ^ `pt` in
+        let l-cm = string-length s-cm in
+        let l-mm = string-length s-mm in
+        let l-pt = string-length s-pt in
+        if l-pt < l-mm && l-pt < l-cm then
+            s-pt
+        else if l-mm < l-cm then
+            s-mm
+        else
+            s-cm
+
+
+    let (=') a b = length-zero (a -' b)
+    let (!=') a b = not (length-zero (a -' b))
+    let (>=') a b = a >' b || a =' b
+    let (<=') a b = a <' b || a =' b
+
+    let (+..) (x1, y1) (x2, y2) = (x1 +' x2, y1 +' y2)
+    let (-..) (x1, y1) (x2, y2) = (x1 -' x2, y1 -' y2)
+    let (*..) (x, y) t = (x *' t, y *' t)
+    let (/..) (x, y) l = (x /' l, y /' l)
+    let (=..) (x1, y1) (x2, y2) = x1 =' x2 && y1 =' y2
+    let point-neg (x, y) = (0pt -' x, 0pt -' y)
+    let point-norm (x, y) = 
+        let (x, y) = (x /' 1pt, y /' 1pt) in
+        1pt *' (sqrt (x *. x +. y *. y))
+    let point-divide (x1, y1) (x2, y2) =
+        let l = point-norm (x1, y1) in
+        x2 *' (x1 /' l) +' y2 *' (y1 /' l)
+    let point-perp (x, y) = (length-neg y, x)
+    let point-perp-rev (x, y) = (y, length-neg x)
+    let point-mul r (x, y) = (x *' r, y *' r)
+    let point-normalize l (x, y) = let r = l /' (point-norm (x, y)) in point-mul r (x, y)
+    let show-point (x, y) = `(` ^ (show-length x) ^ `, `# ^ (show-length y) ^ `)`
+
+
+    let intersect-lines (p1, p2) (p3, p4) =
+        let f (x1, y1) (x2, y2) (x3, y3) =
+            ((x2 -' x1) /' 1pt) *. ((y3 -' y1) /' 1pt)
+            -. ((y2 -' y1) /' 1pt) *. ((x3 -' x1) /' 1pt)
+        in
+        let t1 = f p1 p2 p3 in
+        let t2 = f p1 p2 p4 in
+        let t3 = f p3 p4 p1 in
+        let t4 = f p3 p4 p2 in
+        t1 *. t2 <=. 0. && t3 *. t4 <=. 0.
+
+
+    let point-in-poly (p1, p2, p3, p4) p0 =
+        let cross-product (x1, y1) (x2, y2) = x1 *' (y2 /' 1pt) -' x2 *' (y1 /' 1pt) in
+        cross-product (p2 -.. p1) (p0 -.. p1) <=' 0pt &&
+        cross-product (p3 -.. p2) (p0 -.. p2) <=' 0pt &&
+        cross-product (p4 -.. p3) (p0 -.. p3) <=' 0pt &&
+        cross-product (p1 -.. p4) (p0 -.. p4) <=' 0pt
+
+
+    let overlap-closure (p1a, p1b, p1c, p1d) (p2a, p2b, p2c, p2d) =
+        let (l1a, l1b, l1c, l1d) = ((p1a, p1b), (p1b, p1c), (p1c, p1d), (p1d, p1a)) in
+        let (l2a, l2b, l2c, l2d) = ((p2a, p2b), (p2b, p2c), (p2c, p2d), (p2d, p2a)) in
+        intersect-lines l1a l2a || intersect-lines l1a l2b || intersect-lines l1a l2c ||
+        intersect-lines l1a l2d || intersect-lines l1b l2a || intersect-lines l1b l2b ||
+        intersect-lines l1b l2c || intersect-lines l1b l2d || intersect-lines l1c l2a ||
+        intersect-lines l1c l2b || intersect-lines l1c l2c || intersect-lines l1c l2d ||
+        intersect-lines l1d l2a || intersect-lines l1d l2b || intersect-lines l1d l2c ||
+        intersect-lines l1d l2d || point-in-poly (p1a, p1b, p1c, p1d) p2a || point-in-poly (p2a, p2b, p2c, p2d) p1a
+
+
+    let eps = 0.0000001
+
+
+    let get-root-quadratic a2 a1 a0 =
+        if float-abs a2 <. eps then
+            if float-abs a1 <. eps then
+                []
+            else
+                [0. -. a0 /. a1]
+        else
+            let d = a1 *. a1 -. 4. *. a0 *. a2 in
+            let c = 0. -. a1 /. (2. *. a2) in
+            let d = if (float-abs d <. eps) then 0. else d in
+            if d <. 0. then []
+            else if float-abs d <. eps then [c]
+            else
+                if a2 >. 0. then
+                [
+                    c -. (sqrt d) /. (2. *. a2);
+                    c +. (sqrt d) /. (2. *. a2);
+                ]
+                else
+                [
+                    c +. (sqrt d) /. (2. *. a2);
+                    c -. (sqrt d) /. (2. *. a2);
+                ]
+
+    let get-root-cubic a3 a2 a1 a0 =
+        if float-abs a3 <. eps then
+            get-root-quadratic a2 a1 a0
+        else
+            % 3-dim
+            let c1 = (0. -. 2. *. (cube a2)) +. 9. *. a1 *. a2 *. a3 -. 27. *. a0 *. (square a3) in
+            let c4 = (0. -. (square a2)) +. 3. *. a1 *. a3 in
+            let c3 = c1 *. c1 +. 4. *. (cube c4) in
+            let (c2re, c2im) = if c3 >=. 0. then (c1 +. (sqrt c3), 0.) else (c1, sqrt (float-neg c3)) in
+            let r = pow (c2re *. c2re +. c2im *. c2im) (1. /. 6.) in
+            let theta = (atan (c2im /. c2re)) /. 3. in
+            let theta = if c2re >=. 0. then theta else theta +. 1.04719755 in
+            let c5re = r *. (cos theta) in
+            let c5im = r *. (sin theta) in
+            let sqrt3 = sqrt 3. in
+            let c6pre = c5re -. sqrt3 *. c5im in
+            let c6mre = c5re +. sqrt3 *. c5im in
+            let c6pim = sqrt3 *. c5re +. c5im in
+            let c6mim = 0. -. sqrt3 *. c5re +. c5im in
+            let c7 = 0. -. a2 /. (3. *. a3) in
+            let c8 = 6. *. (cubic 2.) *. a3 in
+            let c9common = 1. /. (r *. 3. *. a3) in
+            let c9re = (cos theta) *. c9common  in
+            let c9im = 0. -. (sin theta) *. c9common in
+            let c10pre = c9re -. sqrt3 *. c9im in
+            let c10mre = c9re +. sqrt3 *. c9im in
+            let c10pim = sqrt3 *. c9re +. c9im in
+            let c10mim = (0. -. sqrt3 *. c9re) +. c9im in
+            let x1re = c7 +. c5re *. 2. /. c8 -. (cubic 2.) *. c4 *. c9re in
+            let x1im = c5im *. 2. /. c8 -. (cubic 2.) *. c4 *. c9im in
+            let c11 = c4 /. (pow 2. (2. /. 3.)) in
+            let x2re = c7 -. c6mre /. c8 +. c11 *. c10pre in
+            let x2im = 0. -. c6mim /. c8 +. c11 *. c10pim in
+            let x3re = c7 -. c6pre /. c8 +. c11 *. c10mre in
+            let x3im = 0. -. c6pim /. c8 +. c11 *. c10mim in
+            % let (x1re, x1im, x2re, x2im) =
+            %     if x2re <. x1re then (x2re, x2im, x1re, x1im) else (x1re, x1im, x2re, x2im) in
+            % let (x2re, x2im, x3re, x3im) =
+            %     if x3re <. x2re then (x3re, x3im, x2re, x2im) else (x2re, x2im, x3re, x3im) in
+            % let (x1re, x1im, x2re, x2im) =
+            %     if x2re <. x1re then (x2re, x2im, x1re, x1im) else (x1re, x1im, x2re, x2im) in
+            let (ret, _) = [(x1re, x1im); (x2re, x2im); (x3re, x3im)]
+                |> List.fold-right (fun  (re, im) (ret, acc) -> (
+                if (float-abs im) <. eps then
+                    if float-abs (re -. acc) <. eps then
+                        (ret, re)
+                    else
+                        (re :: ret, re)
+                else
+                    (ret, acc)
+            )) ([], 0. /. 0.) in ret
+
+
+    let overlap-bbox ((xb1, yb1), (xe1, ye1)) ((xb2, yb2), (xe2, ye2)) =
+        xb2 <=' xe1 && xb1 <=' xe2 && yb2 <=' ye1 && yb1 <=' ye2
+
+        
+    let concat-bbox ((xb1, yb1), (xe1, ye1)) ((xb2, yb2), (xe2, ye2)) =
+        ((length-min xb1 xb2, length-min yb1 yb2), (length-max xe1 xe2, length-max ye1 ye2))
+
+
+    let get-line-equation ((xa, ya), (xb, yb)) =
+        if ya =' yb then
+                (0.,1., 0pt -' ya)
+        else
+            (1., (xb -' xa) /' (ya -' yb),
+            1pt *' ((ya *' (xb /' 1pt) -' yb *' (xa /' 1pt)) /' (yb -' ya)))
+
+
+    let linear-to-position l =
+        % TODO: approximate and make fast
+        % asin (2l - 1) / pi + 0.5 で近似できる?
+        % asin (2. *. l -. 1.) /. 3.14159265 +. 0.5
+        let res = get-root-cubic (2.) (0. -. 3.) 0. l 
+            |> List.filter(fun u -> (0. -. eps <=. u && u <=. 1. +. eps)) in
+        match res with
+        | u::_ -> u
+        | [] -> 0. % Error
+
+
+    let get-position-in-line ((x0, y0), (x1, y1)) (x, y) =
+        let l = if length-abs (x1 -' x0) >' length-abs (y1 -' y0) then
+            (x -' x0) /' (x1 -' x0)
+        else
+            (y -' y0) /' (y1 -' y0)
+        in
+        linear-to-position l
+
+
+    let get-line-line-intersects ((x1a, y1a), (x1e, y1e)) ((x2a, y2a), (x2e, y2e)) =
+        let (dx1, dx2) = (x1e -' x1a, x2e -' x2a) /.. 1pt in
+        let (dy1, dy2) = (y1e -' y1a, y2e -' y2a) /.. 1pt in
+        let (dxa, dya) = (x1a -' x2a, y1a -' y2a) /.. 1pt in
+        let divider = dy2 *. dx1 -. dx2 *. dy1 in
+        if float-abs divider <. eps ||
+            (float-abs dx2 <. eps && float-abs dy2 <. eps) then []
+        else
+            let (u, v) = if length-abs (x2e -' x2a) >' length-abs (y2e -' y2a) then
+                let u = (dya *. dx2 -. dxa *. dy2) /. divider in
+                let v = (dxa +. u *. dx1) /. dx2 in
+                (u, v)
+            else
+                let u = 0. -. (dxa *. dy2 -. dya *. dx2) /. divider in
+                let v = (dya +. u *. dy1) /. dy2 in
+                (u, v)
+            in
+                if 0. -. eps <=. u && u <=. 1. +. eps && 0. -. eps <=. v && v <=. 1. +. eps then
+                    [(linear-to-position u, linear-to-position v)]
+                else []
+
+
+    let rangei count =
+        let-rec inner n m =
+            if n < m then
+                n :: (inner (n + 1) m)
+            else
+                []
+        in
+        inner 0 count
+
+
+    let range v-begin v-end count =
+        if count < 2 then []
+        else
+            let c = (v-end -. v-begin) /. (float (count - 1)) in
+            rangei count |> List.map (fun i -> (
+                v-begin +. (float i) *. c
+            ))
+
+
+    let range-span v-begin v-end count =
+        if count < 1 then []
+        else
+            let c = (v-end -. v-begin) /. (float (count)) in
+            rangei count |> List.map (fun i -> (
+                let v0 = v-begin +. (float i) *. c in
+                (v0, v0 +. c)
+            ))
+
+
+    let-rec list-last lst =
+        match lst with
+        | [] -> None
+        | x::xs -> (match xs with
+            | [] -> Some(x)
+            | xs -> list-last xs
+        )
+
+
+end

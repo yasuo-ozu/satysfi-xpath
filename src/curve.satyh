@@ -1,0 +1,484 @@
+@import: util
+
+open XPathUtil
+
+module XPathCurve : sig
+    type t
+
+    val run-debug : unit -> unit
+    
+    val get-default-delta : length
+    val set-default-delta : length -> unit
+
+    val as-controls : t -> point * point * point * point
+    val from-controls : point * point * point * point -> t
+    val as-edges : t -> point * point
+
+    val get-bbox : t -> point * point
+    val get-rough-closure-lines : t -> (point * point) * (point * point)
+    val get-rough-closure : t -> point * point * point * point
+    
+    % val equals : t -> t -> bool
+    val is-simple : t -> bool
+    val is-line : t -> bool
+
+    val shift: point -> t -> t
+
+    val get-simple-norm : t -> length
+    % val get-length : t -> length
+    val get-point : float -> t -> point
+    val split-at : float -> t -> t * t
+    val split-at-list : t -> float list -> (float * float * t) list
+    val split-span : float -> float -> t -> t
+
+    val get-derivative : float -> t -> point
+
+    % val get-normal : float -> t -> point * point
+
+    % 極値
+    val get-extrema : t -> float list
+
+    val reduce : t -> (float * float * t) list
+    val get-intersects : length -> t -> t -> (float * float) list
+    val get-self-intersects : length -> t -> (float * float) list
+    val get-line-intersects : point * point -> t -> float list
+    val get-lineseg-intersects : point * point -> t -> (float * float) list
+
+    val get-intersections : length -> t -> t -> point list
+    val get-self-intersections : length -> t -> point list
+    val get-lineseg-intersections : point * point -> t -> point list
+
+    val get-point-from-curves-and-pos : t -> t -> float * float -> point
+end = struct
+    type t = point * point * point * point
+
+    let-mutable default-delta <- 0.01pt
+
+    let get-default-delta = !default-delta
+    let set-default-delta delta = default-delta <- delta
+
+    let as-controls curve = curve
+    let from-controls curve = curve
+
+
+    let shift v (p1, p2, p3, p4) = (p1 +.. v, p2 +.. v, p3 +.. v, p4 +.. v)
+
+    let as-edges curve =
+        let (p1, p2, p3, p4) = as-controls curve in
+        (p1, p4)
+
+
+    let get-point u curve =
+        let (p1, p2, p3, p4) = as-controls curve in
+        let v = 1. -. u in
+        (p1 *.. (cube v)) +.. (p2 *.. (u *. v *. v *. 3.))
+            +.. (p3 *.. (u *. u *. v *. 3.)) +.. (p4 *.. (cube u))
+
+
+    let get-simple-norm curve =
+        let (p1, p4) = as-edges curve in
+        point-norm (p4 -.. p1)
+
+
+    let is-line curve =
+        let (p1, p2, p3, p4) = as-controls curve in
+        p1 =.. p2 && p3 =.. p4
+
+
+    let get-derivative u curve =
+        let ((x1, y1), (x2, y2), (x3, y3), (x4, y4)) = as-controls curve in
+        let ret-x = 
+            ((x4 -' x1 +' (x2 -' x3) *' 3.) *' (u *. u)
+                +' ((x1 +' x3) *' 2. -' x2 *' 4.) *' u +' (x2 -' x1)) *' 3. in
+        let ret-y =
+            ((y4 -' y1 +' (y2 -' y3) *' 3.) *' (u *. u)
+                +' ((y1 +' y3) *' 2. -' y2 *' 4.) *' u +' (y2 -' y1)) *' 3. in
+        (ret-x, ret-y)
+
+
+    let split-at t curve =
+        let (p1, p2, p3, p4) = as-controls curve in
+        let u = 1.0 -. t in
+        let p12   = (p1   *.. u) +.. (p2   *.. t) in
+        let p23   = (p2   *.. u) +.. (p3   *.. t) in
+        let p34   = (p3   *.. u) +.. (p4   *.. t) in
+        let p123  = (p12  *.. u) +.. (p23  *.. t) in
+        let p234  = (p23  *.. u) +.. (p34  *.. t) in
+        let p1234 = (p123 *.. u) +.. (p234 *.. t) in
+        (from-controls (p1, p12, p123, p1234), from-controls (p1234, p234, p34, p4))
+
+
+    let split-span u1 u2 curve =
+        let (curve, _) = split-at u2 curve in
+        let (_, curve) = split-at (u1 /. u2) curve in
+        curve
+
+
+    let split-at-list curve ulst =
+        let ulst = List.append ulst [1.] in
+        let (ret, _) = ulst |> List.fold-left (fun (ret, u1) u2 -> (
+            if u1 <. u2 then
+                (List.append ret [(u1, u2, split-span u1 u2 curve)], u2)
+            else
+                (ret, u2)
+        )) ([], 0.) in
+        ret
+
+
+    let get-extrema curve =
+        if is-line curve then []
+        else
+            let ((x1, y1), (x2, y2), (x3, y3), (x4, y4)) = as-controls curve in
+            let ret-x = get-root-quadratic
+                ((x4 -' x1 +' (x2 -' x3) *' 3.) /' 1pt)
+                    (((x1 +' x3) *' 2. -' x2 *' 4.) /' 1pt) ((x2 -' x1) /' 1pt) in
+            let ret-y = get-root-quadratic
+                ((y4 -' y1 +' (y2 -' y3) *' 3.) /' 1pt)
+                    (((y1 +' y3) *' 2. -' y2 *' 4.) /' 1pt) ((y2 -' y1) /' 1pt) in
+            let-rec migrate-lists lst1 lst2 =
+                match (lst1, lst2) with
+                | ([], lst2) -> lst2
+                | (lst1, []) -> lst1
+                | (x::lst1, y::lst2) ->
+                      if x <. y then
+                          x :: (migrate-lists lst1 (y::lst2))
+                      else
+                          y :: (migrate-lists (x::lst1) lst2)
+            in
+            migrate-lists ret-x ret-y |> List.filter (fun u -> 0.0001 <. u && u <. 1. -. 0.0001)
+
+
+    let get-bbox curve =
+        let ((x1, y1), (x4, y4)) = as-edges curve in
+        let (xs, ys) = get-extrema curve |> List.fold-left (fun (xs, ys) u -> (
+            let (x, y) = get-point u curve in
+            (List.append xs [x], List.append ys [y])
+        )) ([], []) in
+        let bx1 = length-min-list (length-min x1 x4) xs in
+        let bx2 = length-max-list (length-max x1 x4) xs in
+        let by1 = length-min-list (length-min y1 y4) ys in
+        let by2 = length-max-list (length-max y1 y4) ys in
+        ((bx1, by1), (bx2, by2))
+
+
+    let get-rough-closure-lines curve =
+        let (p1, p4) = as-edges curve in
+        let ((x1, y1), (x2, y2), (x3, y3), (x4, y4)) = as-controls curve in
+        let m = point-norm (p1 -.. p4) in
+        let (vx, vy) =
+            if length-zero m then (0., 0.)
+            else ( ((y1 -' y4) /' m), ((x4 -' x1) /' m))
+        in
+        let d2 = (x2 -' x1) *' vx +' (y2 -' y1) *' vy in
+        let d3 = (x3 -' x4) *' vx +' (y3 -' y4) *' vy in
+        let (dp, dm) =
+            if d2 >' 0pt && d3 >' 0pt then
+                ((length-max d2 d3) *' 0.75, 0pt) % 0.75 = 3 / 4
+            else if d2 <' 0pt && d3 <' 0pt then
+                (0pt, (length-min d2 d3) *' 0.75)
+            else
+                let (dp, dm) = if d2 >' d3 then (d2, d3) else (d3, d2) in
+                (dp *' 0.4444444444, dm *' 0.4444444444) % 0.4444444 = 4 / 9
+        in
+        (
+            (p1 +.. (dp *' vx, dp *' vy), p4 +.. (dp *' vx, dp *' vy)),
+            (p1 +.. (dm *' vx, dm *' vy), p4 +.. (dm *' vx, dm *' vy))
+        )
+
+
+    let get-rough-closure curve =
+        let (p1, p2, p3, p4) = as-controls curve in
+        let ((q1, q2), (q4, q3)) = get-rough-closure-lines curve in
+        let l1 = (point-divide (p1 -.. p4) (p2 -.. p1)) *' 0.2 in
+        let l2 = (point-divide (p4 -.. p1) (p3 -.. p4)) *' 0.2 in
+        let vl1 = if l1 >' 0pt then point-normalize l1 (p1 -.. p4) else (0pt, 0pt) in
+        let vl2 = if l2 >' 0pt then point-normalize l2 (p4 -.. p1) else (0pt, 0pt) in
+        (q1 +.. vl1, q2 +.. vl2, q3 +.. vl2, q4 +.. vl1)
+
+
+    % let equals curve1 curve2 =
+    %     let (p1, p2, p3, p4) = as-controls curve1 in
+    %     let (q1, q2, q3, q4) = as-controls curve2 in
+    %     p1 =' q1 && p2 =' q2 && p3 =' q3 && p4 =' q4
+
+
+    let is-simple curve =
+        let (p1, p2, p3, p4) = as-controls curve in
+        if p1 =.. p2 && p3 =.. p4 then
+            true
+        else
+            let calculate-crossp (xa, ya) (xb, yb) = xa *' (yb /' 1pt) -' ya *' (xb /' 1pt) in
+            let cp1 = calculate-crossp (p2 -.. p1) (p4 -.. p1) in
+            let cp2 = calculate-crossp (p3 -.. p1) (p4 -.. p1) in
+            if cp1 *' (cp2 /' 1pt) <' 0pt then
+                false
+            else
+                let (dx1, dy1) = (get-derivative 0. curve |> point-normalize 1pt) /.. 1pt in
+                let (dx2, dy2) = (get-derivative 1. curve |> point-normalize 1pt) /.. 1pt in
+                dx1 *. dx2 +. dy1 *. dy2 >. 0.5
+
+
+    let reduce curve =
+        let-rec inner (u0, u1, curve) =
+            if is-simple curve then
+                [(u0, u1, curve)]
+            else
+                let (c1, c2) = split-at 0.5 curve in
+                let uh = (u0 +. u1) *. 0.5 in
+                List.append (inner (u0, uh, c1)) (inner (uh, u1, c2))
+        in
+        get-extrema curve |> split-at-list curve
+                          |> List.map inner
+                          |> List.concat
+
+
+    let get-line-intersects (pa, pe) curve =
+        let (a, b, c) = get-line-equation (pa, pe) in
+        let ((x0a, y0a), (x0e, y0e)) = (pa, pe) in
+        let ((x1, y1), (x2, y2), (x3, y3), (x4, y4)) = as-controls curve in
+        if not (length-zero (x0a -' x0e)) || not (length-zero (y0a -' y0e)) then
+            let a3 = (x4 -' x3 *' 3. +' x2 *' 3. -' x1) *' a
+                +' (y4 -' y3 *' 3. +' y2 *' 3. -' y1) *' b in
+            let a2 = (x3 -' x2 *' 2. +' x1) *' (a *. 3.)
+                +' (y3 -' y2 *' 2. +' y1) *' (b *. 3.) in
+            let a1 = (x2 -' x1) *' (a *. 3.) +' (y2 -' y1) *' (b *. 3.) in
+            let a0 = x1 *' a +' y1 *' b +' c in
+            let res = get-root-cubic (a3 /' 1pt) (a2 /' 1pt) (a1 /' 1pt) (a0 /' 1pt) in
+            res |> List.fold-right (fun v ret -> (
+                if 0. <=. v && v <=. 1. then
+                    v :: ret
+                else ret
+            )) []
+        else []
+
+
+    let get-lineseg-intersects line curve =
+        if is-line curve then
+            get-line-line-intersects line (as-edges curve)
+        else
+            let f = get-position-in-line line in
+            get-line-intersects line curve
+                |> List.fold-right (fun v acc -> (
+                    let u = get-point v curve |> f in
+                    (u, v)::acc
+                )) []
+
+
+    let get-lineseg-intersections (pa, pe) curve =
+        get-lineseg-intersects (pa, pe) curve
+            |> List.map (fun (u, v) -> (
+                (pa *.. u) +.. (pe *.. (1. -. u))
+            ))
+
+
+    let get-intersect-ranges-between-lines (pa1, pa2) (pb1, pb2) curve =
+        let ts1 = get-line-intersects (pa1, pa2) curve in
+        let ts2 = get-line-intersects (pb1, pb2) curve in
+        let-rec sort-ts ts1 ts2 = match (ts1, ts2) with
+            | ([], []) -> []
+            | (t1::rts1, []) -> (1, t1) :: (sort-ts rts1 [])
+            | ([], t2::rts2) -> (2, t2) :: (sort-ts [] rts2)
+            | (t1::rts1, t2::rts2) ->
+                  if t2 <. t1 then
+                      (2, t2) :: (sort-ts (t1::rts1) rts2)
+                  else
+                      (1, t1) :: (sort-ts rts1 (t2::rts2))
+        in
+        let (t0, lst) = match sort-ts ts1 ts2 with
+        | [] -> (0.5, [])
+        | (ln, t):: rlist ->
+              if t =. 0. then
+                  match rlist with
+                  | (_, t2) :: rlist2 ->
+                        ((t +. t2) /. 2., rlist)
+                  | _ -> (0.5, [])
+              else
+                  (0., (ln, t)::rlist)
+        in
+        let p0 = get-point t0 curve in
+        let l1 = point-divide (pb1 -.. pa1) (p0 -.. pa1) in
+        let l2 = point-divide (pa1 -.. pb1) (p0 -.. pb1) in
+        let state = if l1 <' 0pt then 1 else if l2 <' 0pt then 2 else 0 in
+        let (state, t, res) = lst |> List.fold-left (fun (state, t0, res) (ln, t) ->
+            (
+                int-abs (state - ln), t,
+                if state == 0 then (List.append res [(t0, t)]) else res
+            )
+        ) (state, 0., []) in
+        let res = if t =. 1. || state <> 0 then
+                res
+            else
+                List.append res [(t, 1.)]
+        in
+        res
+
+
+    let-rec get-intersects-inner delta (u0, u1, cu) (v0, v1, cv) =
+        let bbu = get-bbox cu in
+        let bbv = get-bbox cv in
+        if overlap-bbox bbu bbv then
+        % let bbu = get-rough-closure cu in
+        % let bbv = get-rough-closure cv in
+        % if overlap-closure bbu bbv then
+            let (lu, lv) = (get-simple-norm cu, get-simple-norm cv) in
+            if lu <' delta *' 3.5 && lv <' delta *' 3.5 then
+                if lu <' lv then
+                    get-lineseg-intersects (as-edges cu) cv
+                        |> List.map (fun (u, v) -> (
+                            u0 +. (u1 -. u0) *. u, v0 +. (v1 -. v0) *. v)
+                        )
+                else
+                    get-lineseg-intersects (as-edges cv) cu
+                        |> List.map (fun (v, u) -> (
+                            u0 +. (u1 -. u0) *. u, v0 +. (v1 -. v0) *. v)
+                        )
+            else
+                if lu <' lv then
+                    let (cvl, cvr) = split-at 0.5 cv in
+                    let vm = (v0 +. v1) /. 2. in
+                    let res1 = get-intersects-inner delta (u0, u1, cu) (v0, vm, cvl) in
+                    let res2 = get-intersects-inner delta (u0, u1, cu) (vm, v1, cvr) in
+                    res1 |> List.append res2
+                else
+                    let (cul, cur) = split-at 0.5 cu in
+                    let um = (u0 +. u1) /. 2. in
+                    let res1 = get-intersects-inner delta (u0, um, cul) (v0, v1, cv) in
+                    let res2 = get-intersects-inner delta (um, u1, cur) (v0, v1, cv) in
+                    res1 |> List.append res2
+                % % let f = get-intersects-inner-algo-split 3 delta in
+                % let f = get-intersects-inner-algo-split 5 delta in
+                % % let f = get-intersects-inner-algo-clipping delta in
+                % if lu <' lv then
+                %     f (v0, v1, cv) (u0, u1, cu) |> List.map (fun (v, u) -> (u, v))
+                % else
+                %     f (u0, u1, cu) (v0, v1, cv)
+        else []
+
+
+    and get-intersects-inner-algo-clipping delta (u0, u1, cu) (v0, v1, cv) =
+        let (l1, l2) = get-rough-closure-lines cv in
+        let spanlst = get-intersect-ranges-between-lines l1 l2 cu in
+        let l = spanlst |> List.fold-left (fun ret (u0, u1) -> ret +. u1 -. u0) 0. in
+        if l <. 0.8 then
+            spanlst |> List.map (fun (uu0, uu1) -> (
+                let (uu0, uu1) = (u0 +. (u1 -. u0) *. uu0,
+                    u0 +. (u1 -. u0) *. uu1) in
+                get-intersects-inner delta (uu0, uu1, cu) (v0, v1, cv)
+            )) |> List.concat
+        else
+            let (l1, l2) = get-rough-closure-lines cu in
+            let spanlst = get-intersect-ranges-between-lines l1 l2 cv in
+            let l = spanlst |> List.fold-left (fun ret (v0, v1) -> ret +. v1 -. v0) 0. in
+            if l <. 0.8 then
+                spanlst |> List.map (fun (vv0, vv1) -> (
+                    let (vv0, vv1) = (v0 +. (v1 -. v0) *. vv0,
+                        v0 +. (v1 -. v0) *. vv1) in
+                    get-intersects-inner delta (u0, u1, cu) (vv0, vv1, cv)
+                )) |> List.concat
+            else
+                %get-intersects-inner-algo-split 3 delta (u0, u1, cu) (v0, v1, cv)
+                get-intersects-inner-algo-split 5 delta (u0, u1, cu) (v0, v1, cv)
+
+
+    and get-intersects-inner-algo-split count delta (u0, u1, cu) v =
+        % cu is longer than cv
+        % let () = display-float `uuu0` u0 in
+        % let () = display-float `uuu1` u1 in
+        let (ret, lst, acc, uu) = 
+            range-span u0 u1 count
+            |> List.fold-left (fun (ret, lst, acc, uu) (uu0, uu1) -> (
+                let c = split-span uu0 uu1 cu in
+                let ans = get-intersects-inner delta (uu0, uu1, c) v in
+                if uu =. uu0 then
+                    if List.is-empty ans then
+                        (ret, lst, [], uu1)
+                    else  % beginning of new span
+                        (ret, lst, ans, uu0)
+                else if List.is-empty ans then
+                    if List.is-empty acc then % end of disabled span
+                        (ret, (uu, uu0) :: lst, [], uu1)
+                    else % end of enabled span
+                        (List.append ret acc, lst, [], uu1)
+                else % disable current span
+                    (ret, lst, [], uu)
+            )) ([], [], [], u0)
+        in
+        let ret = List.append ret acc in
+        match lst with
+        | [] -> ret
+        | [(uu0, uu1)] -> if uu0 =. u0 && uu1 =. u1 then
+              %if count < 7 then
+              %    get-intersects-inner-algo-split (count + 2) delta (u0, u1, cu) v
+              %else
+                  []
+            else get-intersects-inner delta (uu0, uu1, cu) v |> List.append ret
+        | lst -> lst
+              |> List.map (fun (uu0, uu1) -> get-intersects-inner delta (uu0, uu1, cu) v)
+              |> List.concat
+              |> List.append ret
+
+
+    let get-intersects delta curve1 curve2 =
+        if is-line curve1 then
+            get-lineseg-intersects (as-edges curve1) curve2
+        else if is-line curve2 then
+            get-lineseg-intersects (as-edges curve2) curve1
+                |> List.map (fun (v, u) -> (u, v))
+        else
+            let (clst1, clst2) = (reduce curve1, reduce curve2) in
+            clst1 |> List.map (fun u -> (
+                clst2 |> List.map (fun v -> (
+                    get-intersects-inner delta u v
+                )) |> List.concat
+            )) |> List.concat
+
+
+    let get-intersections delta curve1 curve2 =
+        get-intersects delta curve1 curve2
+            |> List.map (fun (u, v) -> (
+                let pu = get-point u curve1 in
+                let pv = get-point v curve2 in
+                (pu +.. pv) *.. 0.5
+            ))
+        
+
+    let get-self-intersects delta curve =
+        if is-line curve then []
+        else
+            let clst = reduce curve in
+            clst |> List.mapi (fun i ci -> (
+                clst |> List.fold-lefti (fun j ret cj -> (
+                    if i + 1 < j then
+                        get-intersects-inner delta ci cj
+                            |> List.append ret
+                    else ret
+                )) [])) |> List.concat
+
+
+    let get-self-intersections delta curve =
+        get-self-intersects delta curve
+            |> List.map (fun (u, v) -> (
+                let pu = get-point u curve in
+                let pv = get-point v curve in
+                (pu +.. pv) *.. 0.5
+            ))
+
+
+    let run-debug () =
+        let () = display-message `begin debug` in
+        let c1 = ((0cm, 0cm), (0cm, 0cm), (3cm, 3cm), (3cm, 3cm)) in
+        let c2 = ((1cm, 2.5cm), (1cm, 2.5cm), (3cm, 3cm), (3cm, 3cm)) in
+        let res = get-intersects 1pt c1 c2 in
+        %res |> display-list `debug` (display-point)
+        res |> List.iter(fun(u, v)->(
+            display-float `u` u before
+            display-float `v` v
+        )) before
+        display-message `end debug`
+
+    let get-point-from-curves-and-pos ci cj (u, v) =
+        let pu = get-point u ci in
+        let pv = get-point v cj in
+        (pu +.. pv) *.. 0.5
+
+end

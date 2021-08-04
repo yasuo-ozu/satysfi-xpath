@@ -1,0 +1,185 @@
+@require: list
+@require: option
+@require: gr
+@import: xpath
+@import: curve
+@import: util
+@require: color
+
+open XPathUtil
+
+module XPathVisualizer : sig
+    type t
+    type point-face
+    type stroke-face
+
+    val circle-point-face  : length ?-> color ?-> length ?-> color -> point-face
+    val square-point-face  : length ?-> color ?-> length ?-> color -> point-face
+    val rhombus-point-face : length ?-> color ?-> length ?-> color -> point-face
+
+    val from-path : XPath.t -> t
+
+    val map-path : (XPath.t -> XPath.t) -> t -> t
+    val map-graphics : (graphics -> graphics) -> t -> t
+
+    val add-points : point-face ?-> (XPath.t -> point list) -> t -> t
+    val add-lines : stroke-face ?-> (XPath.t -> (point * point) list) -> t -> t
+    val add-graphics : (XPath.t -> graphics list) -> t -> t
+
+    val draw : t -> graphics list
+
+    val show-curve : t -> t
+    val show-handles : t -> t
+    val show-intersections : length -> t -> t
+    val show-element-bboxes : t -> t
+    val show-fill : t -> t
+
+end = struct
+    type t = XPath.t * graphics list
+    type point-face = point -> graphics list
+    type stroke-face = length * color
+
+    let from-path p = (p, [])
+
+    let map-path f (pth, glst) = (f pth, glst)
+    let map-graphics f (pth, glst) = (pth, List.map f glst)
+
+    let add-graphics f (pth, glst) =
+        let glst = f pth
+            |> List.append glst
+        in
+        (pth, glst)
+
+    let-mutable point-face-color-param <- 0
+    let-mutable point-face-shape-param <- 0
+
+    let point-face-scheme size sclr b clr f =
+        let size = Option.from 5pt size in
+        fun p -> (
+            let pth = f size p in
+            match sclr with
+            | None -> [fill clr pth]
+            | Some(sclr) -> [
+                  fill clr pth;
+                  let b = Option.from 1pt b in
+                  stroke b sclr pth;
+            ]
+        )
+
+    let circle-point-face ?:size ?:sclr ?:b clr =
+        point-face-scheme size sclr b clr (fun size (x, y) -> (
+            Gr.circle (x, y) (size *' 0.5)
+        ))
+
+    let square-point-face ?:size ?:sclr ?:b clr =
+        point-face-scheme size sclr b clr (fun size (x, y) -> (
+            let w = size *' 0.5 in
+            Gr.rectangle (x -' w, y -' w) (x +' w, y +' w)
+        ))
+
+    let rhombus-point-face ?:size ?:sclr ?:b clr =
+        point-face-scheme size sclr b clr (fun size (x, y) -> (
+            let w = size *' 0.5 in
+            start-path (x -' w, y)
+                |> line-to (x, y +' w)
+                |> line-to (x +' w, y)
+                |> line-to (x, y -' w)
+                |> close-with-line
+        ))
+
+    % 0 ≤ H < 360, 0 ≤ S ≤ 1 and 0 ≤ L ≤ 1
+    let color-hsl h s l =
+        let a = 2. *. l -. 1. in
+        let a = if 1pt *' a >' 0pt then a else 0. -. a in
+        let c = (1. -. a) *. s in
+        let b = h /. 60. -. 2. *. (float (round (h /. 120.))) -. 1. in
+        let b = if 1pt *' b >' 0pt then b else 0. -. b in
+        let x = c *. (1. -. b) in
+        let m = l -. (c /. 2.) in
+        match round (h /. 60.) with
+        | 0 -> RGB(c, x, 0.)
+        | 1 -> RGB(x, c, 0.)
+        | 2 -> RGB(0., c, x)
+        | 3 -> RGB(0., x, c)
+        | 4 -> RGB(x, 0., c)
+        | _ -> RGB(c, 0., x)
+
+    let generate-default-point-face () =
+        let f = match (!point-face-shape-param mod 3) with
+            | 0 -> circle-point-face
+            | 1 -> square-point-face
+            | _ -> rhombus-point-face
+        in
+        let h = 5. *. (float (!point-face-color-param)) in
+        let h = h -. 360. *. (float (round (h /. 360.))) in
+        let clr = color-hsl h 1. 0.3 in
+        let () = point-face-color-param <- (!point-face-color-param) + 1 in
+        let () = point-face-shape-param <- (!point-face-shape-param) + 1 in
+        f clr
+
+    let generate-default-stroke-face () =
+        let h = 5. *. (float (!point-face-color-param)) in
+        let h = h -. 360. *. (float (round (h /. 360.))) in
+        let clr = color-hsl h 1. 0.3 in
+        let () = point-face-color-param <- (!point-face-color-param) + 1 in
+        (0.5pt, clr)
+
+    let add-points ?:pf f v =
+        let pf = Option.from (generate-default-point-face ()) pf in
+        v |> add-graphics (fun pth -> (
+            f pth |> List.map pf |> List.concat
+        ))
+
+    let draw-line (sw, sc) (p0, p1) =
+        start-path p0 |> line-to p1 |> terminate-path |> stroke sw sc
+
+    let add-lines ?:sf f v =
+        let sf = Option.from (generate-default-stroke-face ()) sf in
+        v |> add-graphics (fun pth -> (
+            f pth |> List.map (draw-line sf)
+        ))
+
+    let draw (_, glist) = glist
+
+    let show-curve v =
+        let (w, sclr) = generate-default-stroke-face () in
+        v |> add-graphics (fun pth -> [XPath.stroke w sclr pth])
+
+    let show-handles v =
+        let sf = (0.5pt, Color.gray 0.5) in
+        let pf = square-point-face ?:5pt ?:(Color.black) ?:1pt (Color.white) in
+        v |> add-lines ?:sf (fun pth -> (
+            XPath.as-curves pth
+                |> List.map (fun curve -> (
+                    let (p1, p2, p3, p4) = XPathCurve.as-controls curve in
+                    [(p1, p2); (p3, p4)]
+                )) |> List.concat
+
+        ))
+            |> add-points ?:pf (fun pth -> (
+            XPath.as-curves pth
+                |> List.map (fun curve -> (
+                    let (p1, p2, p3, p4) = XPathCurve.as-controls curve in
+                    [p1; p2; p3; p4]
+                )) |> List.concat
+        ))
+
+    let show-fill v =
+        let color = Color.gray 0.9 in
+        v |> add-graphics (fun pth -> (
+            [pth |> XPath.fill color]
+        ))
+
+    let show-element-bboxes v =
+        v |> add-lines (fun pat -> (
+            XPath.as-curves pat |> List.map (fun curve -> (
+                let ((x0, y0), (x1, y1)) = XPathCurve.get-bbox curve in
+                [((x0, y0), (x0, y1)); ((x0, y1), (x1, y1)); ((x1, y1), (x1, y0)); ((x1, y0), (x0, y0))]
+            )) |> List.concat
+        ))
+
+    let show-intersections delta v =
+        v |> add-points (fun pat -> (
+            XPath.get-intersections-internal delta pat
+        ))
+end

@@ -1,0 +1,39 @@
+;; For Satyrographos 0.0.2 series
+(version 0.0.2)
+
+(library
+  (name "xpath")
+  (version "0.1.0")
+  (sources
+    (
+     (package "xpath.satyg" "./src/xpath.satyg")
+    )
+  )
+  (opam "satysfi-xpath.opam")
+  (dependencies
+    ()
+  )
+  (compatibility ())
+)
+
+(libraryDoc
+  (name "xpath-doc")
+  (version "0.1.0")
+  (workingDirectory "./doc/")
+  (build
+    (
+      (satysfi "xpath-doc.saty" "-o" "xpath-doc.pdf")
+    )
+  )
+  (sources
+    (
+      (doc "xpath-doc.pdf" "./doc/xpath-doc.pdf")
+    )
+  )
+  (opam "satysfi-xpath-doc.opam")
+  (dependencies
+    (
+    )
+  )
+)
+;; vim: set expandtab ts=2 :

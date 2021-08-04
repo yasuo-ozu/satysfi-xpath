@@ -1,0 +1,187 @@
+@require: list
+@import: util
+@import: curve
+
+open XPathUtil
+
+module XPath : sig
+    type t
+    type pre
+
+    % SATySFi compatible APIs
+    val unite-path : t -> t -> t
+    val shift-path : point -> t -> t
+    val linear-transform-path : float -> float -> float -> float -> t -> t
+    val get-path-bbox : t -> point * point
+    val start-path : point -> pre
+    val line-to : point -> pre -> pre
+    val bezier-to : point -> point -> point -> pre -> pre
+    val terminate-path : pre -> t
+    val close-with-line : pre -> t
+    val close-with-bezier : point -> point -> pre -> t
+    val stroke : length -> color -> t -> graphics
+    val fill : color -> t -> graphics
+    val dashed-stroke : length -> length * length * length -> color -> t -> graphics
+
+    % conversion
+    val to-embedded-path : t -> path
+    val to-embedded-prepath : pre -> pre-path
+    val as-curves : t -> XPathCurve.t list
+
+    % path transformation functions
+    % val outset-path : length -> t -> t
+    % val inset-path : length -> t -> t
+    % val simplify-path : float -> t -> t
+    % val deformation-by-path : t -> t -> t
+    % val deformation-by-func : (point -> point) -> t -> t
+
+    % path composition functions
+    % val outline-of-path : length -> t -> t
+    % val outline-of-path-with-func : (length -> (length * length) option) -> t -> t
+    % val make-union-of-paths : t -> t -> t
+    % val make-intersection-of-paths : t -> t -> t
+    % val make-difference-of-paths : t -> t -> t
+    % val make-exclusion-of-paths : t -> t -> t
+    % val make-division-of-paths : t -> t -> t
+    % val make-cut-of-paths : t -> t -> t
+    % val combine-paths : t -> t -> t
+    % val break-apart-paths : t -> t -> t
+
+    % analyzing functions
+    % val get-cross-points : t -> t -> point * float list
+    % val get-length-of-path : t -> length
+    % val get-passing-point : float -> t -> point * float
+    % val get-area-level : point -> t -> int
+    % val get-enclosing-path : point -> t -> t
+
+    val get-intersections-internal : length -> t -> point list
+
+end = struct
+
+    type pre = point * point * XPathCurve.t list
+    type t = (XPathCurve.t list) list
+
+
+    let pre-to-list (_, _, clst) = clst
+    let pat-to-strings pat = pat
+
+
+    let as-curves pth = pth |> List.concat
+    let as-curves-all pth = pth |> List.map (fun lst -> (
+        match lst with
+        | [] -> []
+        | head :: rs ->
+              let tail = match list-last rs with
+                  | None -> head
+                  | Some(tail) -> tail
+              in
+              let (p0, _, _, _) = XPathCurve.as-controls head in
+              let (_, _, _, p1) = XPathCurve.as-controls tail in
+              if p0 =.. p1 then lst
+                else
+                    [XPathCurve.from-controls (p1, p1, p0, p0)] |> List.append lst
+        ))
+
+
+    let get-intersections-internal delta pth =
+        let lst = as-curves-all pth in
+        lst |> List.mapi (fun li cli -> (
+            lst |> List.mapi (fun lj clj -> (
+                if li <= lj then
+                    cli |> List.mapi (fun i ci -> (
+                        clj |> List.mapi (fun j cj -> (
+                            let ei = delta /' (XPathCurve.get-simple-norm ci) in
+                            let ej = delta /' (XPathCurve.get-simple-norm cj) in
+                            if i > j then []
+                            else if li == lj then
+                                let max = List.length cli - 1 in
+                                if i == 0 && j == max then
+                                    if max <= 1 then
+                                        XPathCurve.get-self-intersects delta ci
+                                            |> List.filter (fun (u, v) -> (
+                                                not (
+                                                    (float-abs (v -. 1.) <. ej &&
+                                                    float-abs u <. ei) ||
+                                                    (float-abs (u -. 1.) <. ei &&
+                                                    float-abs v <. ej)
+                                                )
+                                            ))
+                                            |> List.map (XPathCurve.get-point-from-curves-and-pos ci cj)
+                                    else
+                                        XPathCurve.get-intersects delta ci cj
+                                            |> List.filter (fun (u, v) -> (
+                                            not (float-abs (v -. 1.) <. ej &&
+                                                float-abs u <. ei)
+                                            ))
+                                            |> List.map (XPathCurve.get-point-from-curves-and-pos ci cj)
+                                else if i == j then
+                                    XPathCurve.get-self-intersections delta ci
+                                else if i + 1 == j then
+                                    XPathCurve.get-intersects delta ci cj
+                                        |> List.filter (fun (u, v) -> (
+                                        not (float-abs (u -. 1.) <. ei &&
+                                            float-abs v <. ej)
+                                        ))
+                                        |> List.map(XPathCurve.get-point-from-curves-and-pos ci cj)
+                                else
+                                    XPathCurve.get-intersections delta ci cj
+                            else
+                                XPathCurve.get-intersections delta ci cj
+                        )) |> List.concat
+                    )) |> List.concat
+                else
+                    []
+            )) |> List.concat
+        )) |> List.concat
+
+
+
+    let to-embedded-inner clst =
+        match clst with
+        | [] -> start-path (0pt, 0pt) % ERROR
+        | c0::_ ->
+              let (p1, _, _, _) = XPathCurve.as-controls c0 in
+              clst |> List.fold-left (fun ret c -> (
+                  let (_, p2, p3, p4) = XPathCurve.as-controls c in
+                  if XPathCurve.is-line c then
+                      ret |> line-to p4
+                  else
+                      ret |> bezier-to p2 p3 p4
+              )) (start-path p1)
+
+
+    let to-embedded-prepath ppat = to-embedded-inner (pre-to-list ppat)
+    let to-embedded-path pat =
+        let slst = pat-to-strings pat in
+        match slst with
+        | [] -> start-path (0pt, 0pt) |> terminate-path % ERROR
+        | s0::slst ->
+              slst |> List.fold-left (fun ret clist -> (
+                  to-embedded-inner clist |> terminate-path |> unite-path ret
+              )) (to-embedded-inner s0 |> terminate-path)
+
+    let unite-path = List.append
+    let shift-path v = List.map (List.map (XPathCurve.shift v))
+    let start-path p = (p, p, [])
+    let line-to p (p0, pn, lst) = (p0, p, List.append lst [XPathCurve.from-controls (pn, pn, p, p)])
+    let bezier-to p2 p3 p (p0, pn, lst) = (p0, p, List.append lst [XPathCurve.from-controls (pn, p2, p3, p)])
+    let terminate-path (_, _, lst) = [lst]
+    let close-with-line (p0, pn, lst) = [List.append lst [XPathCurve.from-controls (pn, pn, p0, p0)]]
+    let close-with-bezier p2 p3 (p0, pn, lst) = [List.append lst [XPathCurve.from-controls (pn, p2, p3, p0)]]
+    let stroke l color pat = to-embedded-path pat |> stroke l color
+    let fill color pat = to-embedded-path pat |> fill  color
+    let dashed-stroke l (l1, l2, l3) color pat = to-embedded-path pat |> dashed-stroke l (l1, l2, l3) color
+    let get-path-bbox pat = to-embedded-path pat |> get-path-bbox
+    let linear-transform-path a b c d pat =
+        let trans (x, y) =
+            (x *' a +' y *' b, x *' c +' y *' d)
+        in
+        pat |> List.map (fun ps -> (
+            ps |> List.map (fun curve ->
+                (
+                    let (p1, p2, p3, p4) = XPathCurve.as-controls curve in
+                    XPathCurve.from-controls (trans p1, trans p2, trans p3, trans p4)
+                )
+            )
+        ))
+end
