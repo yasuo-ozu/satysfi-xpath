@@ -18,6 +18,9 @@ module XPathUtil : sig
     val point-normalize : length -> point -> point
     val point-perp : point -> point
     val point-perp-rev : point -> point
+    val point-nil : point
+    val point-to-angle : point -> float
+    val angle-to-point : length -> float -> point
     val show-point : point -> string
 
     val float-neg : float -> float
@@ -27,12 +30,14 @@ module XPathUtil : sig
     val float-mod : float -> float -> float
     val float-zero-or-nan : float -> bool
     val float-zero : float -> bool
+    val pi : float
     val (=.) : float -> float -> bool
     val (!=.) : float -> float -> bool
     val (>.) : float -> float -> bool
     val (<.) : float -> float -> bool
     val (>=.) : float -> float -> bool
     val (<=.) : float -> float -> bool
+    val float-sort : float list -> float list
 
     val eps : float
 
@@ -114,6 +119,7 @@ end = struct
     let display-cont f a = f a before a
 
 
+    let pi = 3.1415926536
     let float-neg a = (0. -. 1.) *. a
     let float-zero-or-nan a = not (1pt *' a <' 1pt *' (float-neg a) || 1pt *' a >' 1pt *' (float-neg a))
     let float-zero a = float-zero-or-nan a && not float-zero-or-nan (a +. 1.)
@@ -127,6 +133,21 @@ end = struct
     let float-min a b = if a <. b then a else b
     let float-max a b = if a >. b then a else b
     let float-mod a b = a -. b *. (float (round (a /. b)))
+
+    let-rec float-sort lst =
+        match lst with
+        | [] -> []
+        | f0 :: lst ->
+              let-rec inner f lst = match lst with
+                  | [] -> [f]
+                  | f0 :: lst ->
+                        if f0 <. f then
+                            f0 :: f :: lst
+                        else
+                            f0 :: (inner f lst)
+              in
+              inner f0 (float-sort lst)
+
 
     let int-abs a = if a > 0 then a else 0 - a
 
@@ -178,7 +199,26 @@ end = struct
         x2 *' (x1 /' l) +' y2 *' (y1 /' l)
     let point-perp (x, y) = (length-neg y, x)
     let point-perp-rev (x, y) = (y, length-neg x)
+    let point-nil = (0pt *' (0. /. 0.), 0pt *' (0. /. 0.))
     let point-mul r (x, y) = (x *' r, y *' r)
+    let point-to-angle (x, y) =
+        if x >' y then
+            let at = atan (y /' x) in
+            if x >' 0pt then
+                if at >=. 0. then
+                    at
+                else
+                    at +. 2. *. pi
+            else
+                at +. pi
+        else
+            let at = atan (x /' y) in
+            if y >' 0pt then
+                0.5 *. pi -. at
+            else
+                1.5 *. pi -. at
+    let angle-to-point l at = (l *' cos at, l *' sin at)
+
     let point-normalize l (x, y) = let r = l /' (point-norm (x, y)) in point-mul r (x, y)
     let show-point (x, y) = `(` ^ (show-length x) ^ `, `# ^ (show-length y) ^ `)`
 

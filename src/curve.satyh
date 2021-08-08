@@ -13,6 +13,7 @@ module XPathCurve : sig
     val as-controls : t -> point * point * point * point
     val from-controls : point * point * point * point -> t
     val as-edges : t -> point * point
+    val as-head : t -> point
 
     val get-bbox : t -> point * point
     val get-rough-closure-lines : t -> (point * point) * (point * point)
@@ -23,6 +24,8 @@ module XPathCurve : sig
     val is-line : t -> bool
 
     val shift: point -> t -> t
+    val inverse : t -> t
+    val nil : t
 
     val get-simple-norm : t -> length
     % val get-length : t -> length
@@ -62,10 +65,17 @@ end = struct
 
 
     let shift v (p1, p2, p3, p4) = (p1 +.. v, p2 +.. v, p3 +.. v, p4 +.. v)
+    let inverse (p1, p2, p3, p4) = (p4, p3, p2, p1)
+    let nil = (point-nil, point-nil, point-nil, point-nil)
 
     let as-edges curve =
         let (p1, p2, p3, p4) = as-controls curve in
         (p1, p4)
+
+
+    let as-head curve =
+        let (p1, p2, p3, p4) = as-controls curve in
+        p1
 
 
     let get-point u curve =

@@ -1,6 +1,7 @@
 @require: list
 @import: util
 @import: curve
+@import: graph
 
 open XPathUtil
 
@@ -27,6 +28,7 @@ module XPath : sig
     val to-embedded-path : t -> path
     val to-embedded-prepath : pre -> pre-path
     val as-curves : t -> XPathCurve.t list
+    val to-graph : t -> XPathGraph.t
 
     % path transformation functions
     % val outset-path : length -> t -> t
