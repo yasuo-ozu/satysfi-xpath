@@ -1,0 +1,345 @@
+@require: list
+@import: util
+@import: curve
+
+open XPathUtil
+
+type curve = XPathCurve.t
+
+% representation of connected list of curves
+module XPathRail : sig
+
+    type t
+    type loc
+    val from-curve : curve -> t
+    val as-edges : t -> point * point
+    val set-edges : point * point -> t -> t
+    val as-curve-list : t -> curve list
+    val begins-with : point -> t -> bool
+    val ends-with : point -> t -> bool
+    val faced-with : point -> t -> bool
+    val is-closed : t -> bool
+    val append-or : t -> t -> t option
+    val split-at : int * float -> t -> t * t
+    val split-span : int * float -> int * float -> t -> t
+    val inverse : t -> t
+    val take-from-point : point -> t -> t option
+    val into-list : t -> point * (((point * point) option * point) list)
+
+    val line-to : point -> t -> t
+    val bezier-to : point -> point -> point -> t -> t
+    val close : t -> t
+    val close-with-bezier : point -> point -> t -> t
+    val shift : point -> t -> t
+    val linear-transform : float * float * float * float -> t -> t
+
+    val get-cross-points-self : length -> t -> loc list
+    val get-cross-points : length -> t -> t -> (loc list) * (loc list)
+    val split-at-locations : length -> loc list -> t -> t list
+
+    %%! Get a list of loc and fix the point of locs to the nearest point in pts.
+    val fix-locations : length -> loc list -> point list -> (loc list) * (point list)
+
+end = struct
+
+    type t = point * point * (curve list)
+    type loc = int * float * point
+
+    let from-curve c =
+        let (pa, pe) = XPathCurve.as-edges c in
+        (pa, pe, [c])
+    let as-edges (pa, pe, _) = (pa, pe)
+    let as-curve-list (_, _, cs) = cs
+    let begins-with p (pa, _, _) = p =.. pa
+    let ends-with p (_, pe, _) = p =.. pe
+    let faced-with p (pa, pe, _) = p =.. pa || p =.. pe
+
+
+    let linear-transform (a, b, c, d) (pa, pe, cs) =
+        let trans (x, y) =
+            (x *' a +' y *' b, x *' c +' y *' d)
+        in
+        (
+            trans pa, trans pe,
+            cs |> List.map (fun c -> (
+                let (p0, p1, p2, p3) = XPathCurve.as-controls c in
+                XPathCurve.from-controls (trans p0, trans p1, trans p2, trans p3)
+            ))
+        )
+
+
+    let line-to p (pa, pe, cs) =
+        (pa, p, List.append cs [
+            XPathCurve.from-controls (pe, pe, p, p)
+        ])
+
+
+    let bezier-to p1 p2 p (pa, pe, cs) =
+        (pa, p, List.append cs [
+            XPathCurve.from-controls (pe, p1, p2, p)
+        ])
+
+
+    let close-with-bezier p1 p2 (pa, pe, cs) =
+        (pe, pe, (XPathCurve.from-controls (pe, p1, p2, pa))::cs)
+
+
+    let shift p (pa, pe, cs) =
+        (pa +.. p, pe +.. p, List.map (XPathCurve.shift p) cs)
+
+
+    let set-edges (pa, pe) (_, _, cs) =
+        let-rec impl c cs =
+            match cs with
+            | [] ->
+                  let (p0, p1, p2, _) = XPathCurve.as-controls c in
+                  [XPathCurve.from-controls (p0, p1, p2, pe)]
+            | c::cs ->
+                  c::(impl c cs)
+        in
+        match cs with
+        | [] -> display-message `ERROR in set-edge` before
+              (pa, pe, cs)
+        | c::cs ->
+              let (_, p1, p2, p3) = XPathCurve.as-controls c in
+              let cs = impl (XPathCurve.from-controls (pa, p1, p2, p3)) cs in
+              (pa, pe, cs)
+        
+
+    let is-closed rail =
+        let (pa, pe) = as-edges rail in
+        pa =.. pe
+
+
+    let close (pa, pe, cs) =
+        if pa =.. pe then
+            (pa, pe, cs)
+        else
+            let c = XPathCurve.from-controls (pe, pe, pa, pa) in
+            (pe, pe, c::cs)
+
+
+    let append-or (pa1, pe1, cs1) (pa2, pe2, cs2) =
+        if pe1 =.. pa2 then
+            Some((pa1, pe2, List.append cs1 cs2))
+        else
+            None
+
+
+    let split-at (i, u) (pa1, pe2, cs) =
+        let-rec impl i cs =
+            match cs with
+            | c::rcs -> (
+                  if i == 0 then
+                      let (c1, c2) = XPathCurve.split-at u c in
+                      let (_, p) = XPathCurve.as-edges c1 in
+                      (p, [c1], c2::rcs)
+                  else
+                      let (p, cs1, cs2) = impl (i - 1) rcs in
+                      (p, c::cs1, cs2)
+            )
+            | [] -> display-message `ERROR bad index i in split-at` before
+                  ((0pt, 0pt), [], [])
+        in
+        let (p, cs1, cs2) = impl i cs in
+        ((pa1, p, cs1), (p, pe2, cs2))
+
+
+    % i should be less than j or i == j && u < v
+    let split-span (i, u) (j, v) (pa, pe, cs) =
+        let d = j - i in
+        let-rec impl i cs =
+            match cs with
+            | c::rcs -> (
+                  if i == 0 then
+                      if d == 0 then
+                          let c = XPathCurve.split-span u v c in
+                          let (pa, pe) = XPathCurve.as-edges c in
+                          (pa, pe, [c])
+                      else
+                          let-rec impl2 d cs =
+                              match cs with
+                              | c::rcs -> (
+                                    if d == 0 then
+                                        let (c, _) = XPathCurve.split-at v c in
+                                        let (_, pe) = XPathCurve.as-edges c in
+                                        ([c], pe)
+                                    else
+                                        let (cs, pe) = impl2 (d - 1) rcs in
+                                        (c::cs, pe)
+                              )
+                              | [] -> display-message `ERROR bad jndex i in split-span` before
+                                   ([], (0pt, 0pt))
+                          in
+                          let (_, c) = XPathCurve.split-at u c in
+                          let (cs, pe) = impl2 d rcs in
+                          let (pa, _) = XPathCurve.as-edges c in
+                          (pa, pe, c::cs)
+                  else
+                      impl (i - 1) rcs
+            )
+            | [] -> display-message `ERROR bad index i in split-at` before
+                  ((0pt, 0pt), (0pt, 0pt), [])
+        in
+        impl i cs
+
+
+    let inverse (pa, pe, cs) =
+        let cs = cs |> List.fold-left (fun res c -> (
+            let c = XPathCurve.inverse c in
+            c::res
+        )) [] in
+        (pe, pa, cs)
+
+
+    let take-from-point p rail =
+        if begins-with p rail then
+            Some(rail)
+        else if ends-with p rail then
+            Some(inverse rail)
+        else None
+
+
+    let add-sorted items lst =
+        let (res, items) = lst |> List.fold-right (fun (j, v, pj) (res, items) -> (
+            let (res, items) = items |> List.fold-right (fun (i, u, pi) (res, items) -> (
+                if j < i || (i == j && v <. u) then
+                    ((i, u, pi) :: res, items)
+                else
+                    (res, (i, u, pi) :: items)
+            )) (res, [])  in
+            ((j, v, pj) :: res, items)
+        )) ([], items) in
+        List.append items res
+
+
+    let get-cross-points-self delta (_, _, cs) =
+        let (cse, max) = cs |> List.fold-right (fun c (res, max) -> (
+            ((c, delta /' (XPathCurve.get-simple-norm c))::res, max + 1)
+        )) ([], -1) in
+        cse |> List.fold-lefti (fun i ret (ci, ei) -> (
+            cse |> List.fold-lefti (fun j ret (cj, ej) -> (
+                if i > j then ret
+                else
+                    if i == 0 && j == max then
+                        if max <= 1 then
+                            XPathCurve.get-self-intersects delta ci
+                                |> List.fold-right (fun (u, v) ret -> (
+                                    if (
+                                        (float-abs (v -. 1.) <. ej &&
+                                        float-abs u <. ei) ||
+                                        (float-abs (u -. 1.) <. ei &&
+                                        float-abs v <. ej)
+                                    ) then ret
+                                    else
+                                        let p = XPathCurve.get-point-from-curves-and-pos ci cj (u, v) in
+                                        ret |> add-sorted (
+                                            if i < j || u <=. v then
+                                                [(i, u, p); (j, v, p)]
+                                            else
+                                                [(j, v, p); (i, u, p)]
+                                        )
+                                )) ret
+                        else
+                            XPathCurve.get-intersects delta ci cj
+                                |> List.fold-right (fun (u, v) ret -> (
+                                    if (float-abs (v -. 1.) <. ej &&
+                                        float-abs u <. ei)
+                                    then ret
+                                    else
+                                        let p = XPathCurve.get-point-from-curves-and-pos ci cj (u, v) in
+                                        ret |> add-sorted [(i, u, p); (j, v, p)]
+                                )) ret
+                    else if i == j then
+                        XPathCurve.get-self-intersects delta ci
+                            |> List.fold-right (fun (u, v) ret -> (
+                                let p = XPathCurve.get-point-from-curves-and-pos ci cj (u, v) in
+                                ret |> add-sorted (
+                                    if u <=. v then
+                                        [(i, u, p); (j, v, p)]
+                                    else
+                                        [(j, v, p); (i, u, p)]
+                                )
+                            )) ret
+                    else if i + 1 == j then
+                        XPathCurve.get-intersects delta ci cj
+                            |> List.fold-right (fun (u, v) ret -> (
+                                if (float-abs (u -. 1.) <. ei &&
+                                    float-abs v <. ej)
+                                then ret
+                                else
+                                    let p = XPathCurve.get-point-from-curves-and-pos ci cj (u, v) in
+                                    ret |> add-sorted [(i, u, p); (j, v, p)]
+                            )) ret
+                    else
+                        XPathCurve.get-intersects delta ci cj
+                            |> List.fold-right (fun (u, v) ret -> (
+                                let p = XPathCurve.get-point-from-curves-and-pos ci cj (u, v) in
+                                ret |> add-sorted [(i, u, p); (j, v, p)]
+                            )) ret
+            )) ret
+        )) []
+
+
+    let get-cross-points delta (_, _, cs1) (_, _, cs2) =
+        cs1 |> List.fold-lefti (fun i rs ci -> (
+            cs2 |> List.fold-lefti (fun j rs cj -> (
+                XPathCurve.get-intersects delta ci cj
+                    |> List.fold-right (fun (u, v) (rs1, rs2) -> (
+                        let p = XPathCurve.get-point-from-curves-and-pos ci cj (u, v) in
+                        (
+                            rs1 |> add-sorted [(i, u, p)],
+                            rs2 |> add-sorted [(j, v, p)]
+                        )
+                    )) rs
+            )) rs
+        )) ([], [])
+
+
+    let fix-locations delta locs pts =
+        let-rec get-neighborhood-point p pts =
+            match pts with
+            | [] -> None
+            | q :: pts ->
+                  if point-norm (p -.. q) <' delta then
+                      Some(p)
+                  else
+                      get-neighborhood-point p pts
+        in
+        locs |> List.fold-left (fun (locs, pts) (i, u, p) -> (
+            match get-neighborhood-point p pts with
+            | None -> ((i, u, p) :: locs, p :: pts)
+            | Some(p) -> ((i, u, p) :: locs, pts)
+        )) ([], pts)
+
+
+    let split-at-locations delta locs rail =
+        let (pa, pe) = as-edges rail in
+        let (i, u, pa, ret) = locs |> List.fold-left (fun (i, u, pa, ret) (j, v, pe) -> (
+            if pa =.. pe then
+                % The curve is eliminated by fix-locations.
+                % Precondition: the curve is small enough
+                (j, v, pe, ret)
+            else
+                % Get a rail from (i, u, pa) to (j, v, pe)
+                let res = split-span (i, u) (j, v) rail
+                    |> set-edges (pa, pe)
+                in
+                (j, v, pe, List.append ret [res])
+        )) (0, 0., pa, []) in
+        let (_, res) = split-at (i, u) rail in
+        let res =  set-edges (pa, pe) res in
+        List.append ret [res]
+
+
+        let into-list (pa, _, cs) =
+            let lst = cs |> List.map (fun c -> (
+                let (p0, p1, p2, p3) = XPathCurve.as-controls c in
+                if p0 =.. p1 && p2 =.. p3 then
+                    (None, p3)
+                else
+                    (Some((p1, p2)), p3)
+            )) in
+            (pa, lst)
+
+end

@@ -1,22 +1,26 @@
 @require: list
 @import: util
 @import: curve
+@import: rail
 
 open XPathUtil
 
 type curve = XPathCurve.t
+type rail = XPathRail.t
+type loc = XPathRail.loc
 
+% Representation of graph-like structure of rails
 module XPathGraph : sig
 
     type t
 
     val new : t
     val as-points : t -> point list
-    val as-all-curves : t -> curve list
+    val as-rails : t -> rail list
 
-    val add-closed-curves : length -> curve list -> t -> t
+    val add-rail : length -> rail -> t -> t
     val remove-inner-edges : t -> t
-    % val to-closed-curves : t -> curve list list
+    val into-closed-rails : t -> rail list
 
 end = struct
     type t = (curve list) list * (point list)
@@ -332,6 +336,46 @@ end = struct
             | j :: rm -> if i == j then (acc, rm) else (List.append acc [item], llst)
         )) ([], llst) in
         (lst, pts)
+
+
+    let-rec get-edge-points lst = match lst with
+        | [] -> display-message `ERROR in get-points` before ((0pt, 0pt), (0pt, 0pt))
+        | c::[] -> XPathCurve.get-edges c
+        | c::cs ->
+              let (_, pe) = get-edge-points cs in
+              let (pa, _) = XPathCurve.get-edges c in
+              (pa, pe)
+
+
+    let into-closed-curves (lst, _) =
+        % Build a curve list which begins with p
+        let impl p lst =
+            let-rec impl-inner p-end p lst =
+                let (pe, cs, lst) = lst |> List.fold-right (fun cs (pacc, csacc, lst) -> (
+                    let (pa, pe) = get-edge-points cs in
+                    if pa =.. pacc  && (List.length csacc == 0 || pa !=.. p) then
+                        (pe, List.append csacc cs, lst)
+                    else
+                        (pacc, csacc, cs::lst)
+                )) (p, [], []) in
+                match cs with
+                | [] -> ([], lst)
+                | _ -> (
+                      if p-end =.. pe then
+                          (cs, lst)
+                      else
+                          let (cs2, lst0) = impl-inner p-end pe lst in
+                          match cs2 with
+                          | [] -> display-message `ERROR in into-closed-curves` before ([], lst)
+                          | _ -> (List.append cs cs2, lst0)
+                )
+            in
+            let (cs, lst) = impl-inner p p lst in
+
+
+                      
+
+
 
 
 
