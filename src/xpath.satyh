@@ -1,7 +1,7 @@
 @require: list
 @import: util
 @import: curve
-@import: graph
+%@import: graph
 @import: rail
 
 open XPathUtil
@@ -29,9 +29,9 @@ module XPath : sig
     % conversion
     val to-embedded-path : t -> path
     val to-embedded-prepath : pre -> pre-path
-    val into-graph : t -> XPathGraph.t
+    %val into-graph : t -> XPathGraph.t
 
-    val remove-inner-edges : delta -> t -> t
+    %val remove-inner-edges : delta -> t -> t
 
     % path transformation functions
     % val outset-path : length -> t -> t
@@ -60,80 +60,12 @@ module XPath : sig
     % val get-enclosing-path : point -> t -> t
 
     val get-intersections : length -> t -> point list
-    val get-intersections-between : length -> t -> t -> point list
+    val get-intersections-with : length -> pre -> t -> point list
 
 end = struct
 
     type pre = PrePoint of point | PreRail of rail
     type t = pre list
-
-    % let as-curves pth = pth |> List.concat
-    % let as-curves-all pth = pth |> List.map (fun lst -> (
-    %     match lst with
-    %     | [] -> []
-    %     | head :: rs ->
-    %           let tail = match list-last rs with
-    %               | None -> head
-    %               | Some(tail) -> tail
-    %           in
-    %           let (p0, _, _, _) = XPathCurve.as-controls head in
-    %           let (_, _, _, p1) = XPathCurve.as-controls tail in
-    %           if p0 =.. p1 then lst
-    %             else
-    %                 [XPathCurve.from-controls (p1, p1, p0, p0)] |> List.append lst
-    %     ))
-
-
-    % let get-intersections-internal delta pth =
-    %     let lst = as-curves-all pth in
-    %     lst |> List.mapi (fun li cli -> (
-    %         lst |> List.mapi (fun lj clj -> (
-    %             if li <= lj then
-    %                 cli |> List.mapi (fun i ci -> (
-    %                     clj |> List.mapi (fun j cj -> (
-    %                         let ei = delta /' (XPathCurve.get-simple-norm ci) in
-    %                         let ej = delta /' (XPathCurve.get-simple-norm cj) in
-    %                         if i > j then []
-    %                         else if li == lj then
-    %                             let max = List.length cli - 1 in
-    %                             if i == 0 && j == max then
-    %                                 if max <= 1 then
-    %                                     XPathCurve.get-self-intersects delta ci
-    %                                         |> List.filter (fun (u, v) -> (
-    %                                             not (
-    %                                                 (float-abs (v -. 1.) <. ej &&
-    %                                                 float-abs u <. ei) ||
-    %                                                 (float-abs (u -. 1.) <. ei &&
-    %                                                 float-abs v <. ej)
-    %                                             )
-    %                                         ))
-    %                                         |> List.map (XPathCurve.get-point-from-curves-and-pos ci cj)
-    %                                 else
-    %                                     XPathCurve.get-intersects delta ci cj
-    %                                         |> List.filter (fun (u, v) -> (
-    %                                         not (float-abs (v -. 1.) <. ej &&
-    %                                             float-abs u <. ei)
-    %                                         ))
-    %                                         |> List.map (XPathCurve.get-point-from-curves-and-pos ci cj)
-    %                             else if i == j then
-    %                                 XPathCurve.get-self-intersections delta ci
-    %                             else if i + 1 == j then
-    %                                 XPathCurve.get-intersects delta ci cj
-    %                                     |> List.filter (fun (u, v) -> (
-    %                                     not (float-abs (u -. 1.) <. ei &&
-    %                                         float-abs v <. ej)
-    %                                     ))
-    %                                     |> List.map(XPathCurve.get-point-from-curves-and-pos ci cj)
-    %                             else
-    %                                 XPathCurve.get-intersections delta ci cj
-    %                         else
-    %                             XPathCurve.get-intersections delta ci cj
-    %                     )) |> List.concat
-    %                 )) |> List.concat
-    %             else
-    %                 []
-    %         )) |> List.concat
-    %     )) |> List.concat
 
 
     let to-embedded-prepath pp =
@@ -157,22 +89,54 @@ end = struct
         )) (to-embedded-prepath pp0 |> terminate-path)
 
 
-    let into-graph pat =
-        pat |> List.fold-left (fun ret pp -> (
-            match pp with
-            | PrePoint(_) -> ret
-            | PreRail(r) -> XPathGraph.add-rail r ret
-        )) (XPathGraph.new)
+    %let into-graph pat =
+    %    pat |> List.fold-left (fun ret pp -> (
+    %        match pp with
+    %        | PrePoint(_) -> ret
+    %        | PreRail(r) -> XPathGraph.add-rail r ret
+    %    )) (XPathGraph.new)
 
+
+    %let get-intersections delta pat =
+    %    into-graph pat |> XPathGraph.as-points
 
     let get-intersections delta pat =
-        into-graph pat |> XPathGraph.as-points
+        pat |> List.fold-lefti (fun i acc ppi -> (
+            match ppi with
+            | PrePoint(_) -> acc
+            | PreRail(ri) ->
+                pat |> List.fold-lefti (fun j acc ppj -> (
+                  if i == j then
+                      XPathRail.get-cross-points-self delta ri
+                          |> List.append acc |>  uniq (=..)
+                  else
+                    match ppj with
+                    | PrePoint(_) -> acc
+                    | PreRail(rj) ->
+                          XPathRail.get-cross-points delta ri rj
+                              |> List.append acc |> uniq (=..)
+                )) acc
+        )) []
 
 
-    let remove-inner-edges delta pat =
-        into-graph pat |> XPathGraph.remove-inner-edges
-                       |> into-closed-rails
-                       |> List.map (fun r -> PreRail(r))
+    %let remove-inner-edges delta pat =
+    %    into-graph pat |> XPathGraph.remove-inner-edges
+    %                   |> into-closed-rails
+    %                   |> List.map (fun r -> PreRail(r))
+
+
+    let get-intersections-with delta ppat pat =
+        match ppat with
+        | PrePoint(_) -> []
+        | PreRail(rail) ->
+              pat |> List.fold-left (fun acc p -> (
+                  match p with
+                  | PrePoint(_) -> acc
+                  | PreRail(rail2) ->
+                        let (lst, _) = XPathRail.get-cross delta rail rail2 in
+                        XPathRail.migrate-locations lst acc
+              )) []
+              |> List.map (XPathRail.loc-to-point)
 
 
     % SATySFi compatible APIs
@@ -202,13 +166,19 @@ end = struct
 
 
     let close-with-line pp = match pp with
-        | PrePoint(p0) -> PrePoint(p0)
-        | PreRail(r) -> PreRail(XPathRail.close r)
+        | PrePoint(p0) -> [PrePoint(p0)]
+        | PreRail(r) -> [PreRail(XPathRail.close r)]
 
 
-    let close-with-bezier p1 p2 pp = match pp with
-        | PrePoint(p0) -> PreRail(XPathRail.from-controls (p0, p1, p2, p0))
-        | PreRail(r) -> PreRail(XPathRail.close-with-bezier p1 p2 r)
+    let close-with-bezier p1 p2 pp =
+        [
+            match pp with
+            | PrePoint(p0) -> PreRail(
+                  XPathCurve.from-controls (p0, p1, p2, p0)
+                      |> XPathRail.from-curve
+            )
+            | PreRail(r) -> PreRail(XPathRail.close-with-bezier p1 p2 r)
+        ]
 
 
     let stroke l color pat = to-embedded-path pat |> stroke l color

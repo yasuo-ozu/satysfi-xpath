@@ -90,6 +90,10 @@ module XPathUtil : sig
     val display-in-cont : unit -> 'a -> 'a
     val display-cont : ('a -> unit) -> 'a -> 'a
 
+    val sort : ('a -> 'a -> bool) -> 'a list -> 'a list
+    val sorted-merge : ('a -> 'a -> bool) -> 'a list -> 'a list -> 'a list
+    val uniq : ('a -> 'a -> bool) -> 'a list -> 'a list
+
 end = struct
     %type point = length * length
     let display-point name (x, y) =
@@ -428,6 +432,74 @@ end = struct
             | [] -> Some(x)
             | xs -> list-last xs
         )
+
+
+    let-rec sort cmpf lst =
+        (
+            match lst with
+            | [] -> []
+            | [p] -> [p]
+            | [p; q] -> if cmpf p q then [p; q] else [q; p]
+            | [p; q; r] ->
+                  let (p, q) = if cmpf p q then (p, q) else (q, p) in
+                  let (q, r) = if cmpf q r then (q, r) else (r, q) in
+                  let (p, q) = if cmpf p q then (p, q) else (q, p) in
+                  [p; q; r]
+            | [p; q; r; s] ->
+                  let (p, q) = if cmpf p q then (p, q) else (q, p) in
+                  let (q, r) = if cmpf q r then (q, r) else (r, q) in
+                  let (r, s) = if cmpf r s then (r, s) else (s, r) in
+                  let (p, q) = if cmpf p q then (p, q) else (q, p) in
+                  let (q, r) = if cmpf q r then (q, r) else (r, q) in
+                  let (p, q) = if cmpf p q then (p, q) else (q, p) in
+                  [p; q; r; s]
+            | x::xs ->
+                  let-rec impl y xs =
+                      match xs with
+                      | [] -> [y]
+                      | x::xs ->
+                            if cmpf x y then
+                                x::(impl y xs)
+                            else
+                                y::x::xs
+                  in
+                  let xs = sort cmpf xs in
+                  impl x xs
+        )
+
+
+    let-rec sorted-merge cmpf xs ys =
+        (
+            match xs with
+            | [] -> ys
+            | x::xs -> (
+                  match ys with
+                  | [] -> x::xs
+                  | y::ys ->
+                        if cmpf x y then
+                            x :: y :: (sorted-merge cmpf xs ys)
+                        else
+                            y :: x :: (sorted-merge cmpf xs ys)
+            )
+        )
+
+
+    let uniq equalf xs =
+        let-rec find-impl x ys =
+            match ys with
+            | [] -> false
+            | y::ys ->
+                  if equalf x y then
+                      true
+                  else
+                      find-impl x ys
+        in
+        xs |> List.fold-right (fun x acc -> (
+            if find-impl x acc then
+                acc
+            else
+                x::acc
+        )) []
 
 
 end

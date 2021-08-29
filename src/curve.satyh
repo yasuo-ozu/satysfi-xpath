@@ -7,9 +7,7 @@ module XPathCurve : sig
 
     val run-debug : unit -> unit
     
-    val get-default-delta : length
-    val set-default-delta : length -> unit
-
+    val nil : t
     val as-controls : t -> point * point * point * point
     val from-controls : point * point * point * point -> t
     val as-edges : t -> point * point
@@ -28,8 +26,10 @@ module XPathCurve : sig
     val nil : t
 
     val get-simple-norm : t -> length
-    % val get-length : t -> length
+    val get-rough-length : length -> t -> length
+    val get-rough-pos-from-length : length -> length -> t -> length * (float option)
     val get-point : float -> t -> point
+    val pos-to-point : t -> float -> point
     val split-at : float -> t -> t * t
     val split-at-list : t -> float list -> (float * float * t) list
     val split-span : float -> float -> t -> t
@@ -42,27 +42,24 @@ module XPathCurve : sig
     val get-extrema : t -> float list
 
     val reduce : t -> (float * float * t) list
+    val reduce-only : t -> t list
     val get-intersects : length -> t -> t -> (float * float) list
-    val get-self-intersects : length -> t -> (float * float) list
-    val get-line-intersects : point * point -> t -> float list
-    val get-lineseg-intersects : point * point -> t -> (float * float) list
+    % val get-self-intersects : length -> t -> (float * float) list
+    val get-line-intersects : t -> point * point -> float list
+    val get-lineseg-intersects : t -> point * point -> (float * float) list
 
     val get-intersections : length -> t -> t -> point list
-    val get-self-intersections : length -> t -> point list
-    val get-lineseg-intersections : point * point -> t -> point list
+    % val get-self-intersections : length -> t -> point list
+    val get-lineseg-intersections : t -> point * point -> point list
 
     val get-point-from-curves-and-pos : t -> t -> float * float -> point
 end = struct
     type t = point * point * point * point
 
-    let-mutable default-delta <- 0.01pt
-
-    let get-default-delta = !default-delta
-    let set-default-delta delta = default-delta <- delta
-
     let as-controls curve = curve
     let from-controls curve = curve
 
+    let nil = from-controls (point-nil, point-nil, point-nil, point-nil)
 
     let shift v (p1, p2, p3, p4) = (p1 +.. v, p2 +.. v, p3 +.. v, p4 +.. v)
     let inverse (p1, p2, p3, p4) = (p4, p3, p2, p1)
@@ -83,6 +80,9 @@ end = struct
         let v = 1. -. u in
         (p1 *.. (cube v)) +.. (p2 *.. (u *. v *. v *. 3.))
             +.. (p3 *.. (u *. u *. v *. 3.)) +.. (p4 *.. (cube u))
+
+
+    let pos-to-point curve u = get-point u curve
 
 
     let get-simple-norm curve =
@@ -133,6 +133,45 @@ end = struct
                 (ret, u2)
         )) ([], 0.) in
         ret
+
+
+    let-rec get-rough-length delta curve =
+        let l = get-simple-norm curve in
+        if l <' delta then
+            l
+        else
+            let (c1, c2) = split-at 0.5 curve in
+            get-rough-length delta c1 +' get-rough-length delta c2
+
+
+    let get-rough-pos-from-length delta l curve =
+        let-rec impl l a b curve =
+            let l0 = get-simple-norm curve in
+            let c = (a +. b) /. 2. in
+            if l0 <' delta then
+                if l <=' l0 then
+                    (l, Some(c))
+                else
+                    (l0, None)
+            else
+                let (c1, c2) = split-at 0.5 curve in
+                let (l1, res) = impl l a c c1 in
+                match res with
+                | None ->
+                      let (l2, res) = impl (l -' l1) c b c2 in
+                      (l1 +' l2, res)
+                | _ -> (l1, res)
+        in
+        if l <' 0pt then
+            let (len, ret) = impl (0pt -' l) 0. 1. (inverse curve) in
+            (
+                0pt -' len,
+                match ret with
+                | Some(p) -> Some(1. -. p)
+                | None -> None
+            )
+        else
+            impl l 0. 1. curve
 
 
     let get-extrema curve =
@@ -214,7 +253,7 @@ end = struct
 
     let is-simple curve =
         let (p1, p2, p3, p4) = as-controls curve in
-        if p1 =.. p2 && p3 =.. p4 then
+        if is-line curve then
             true
         else
             let calculate-crossp (xa, ya) (xb, yb) = xa *' (yb /' 1pt) -' ya *' (xb /' 1pt) in
@@ -237,12 +276,23 @@ end = struct
                 let uh = (u0 +. u1) *. 0.5 in
                 List.append (inner (u0, uh, c1)) (inner (uh, u1, c2))
         in
-        get-extrema curve |> split-at-list curve
-                          |> List.map inner
-                          |> List.concat
+        if is-line curve then [(0., 1., curve)]
+        else
+            get-extrema curve |> split-at-list curve
+                              |> List.map inner
+                              |> List.concat
 
 
-    let get-line-intersects (pa, pe) curve =
+    let reduce-only curve =
+        reduce curve |> List.map (fun (_, _, c) -> c)
+
+
+    let (ulim1, ulim2) = (0. -. eps, 1. +. eps)
+    let sortf = (fun (v1, u1) (v2, u2) -> ( u1 <=. u2))
+    let replacef = (fun (u, v) -> (v, u))
+
+
+    let get-line-intersects curve (pa, pe) =
         let (a, b, c) = get-line-equation (pa, pe) in
         let ((x0a, y0a), (x0e, y0e)) = (pa, pe) in
         let ((x1, y1), (x2, y2), (x3, y3), (x4, y4)) = as-controls curve in
@@ -254,75 +304,78 @@ end = struct
             let a1 = (x2 -' x1) *' (a *. 3.) +' (y2 -' y1) *' (b *. 3.) in
             let a0 = x1 *' a +' y1 *' b +' c in
             let res = get-root-cubic (a3 /' 1pt) (a2 /' 1pt) (a1 /' 1pt) (a0 /' 1pt) in
-            res |> List.fold-right (fun v ret -> (
-                if 0. <=. v && v <=. 1. then
-                    v :: ret
+            res |> List.fold-right (fun u ret -> (
+                if ulim1 <. u && u <. ulim2 then
+                    u :: ret
                 else ret
             )) []
         else []
 
 
-    let get-lineseg-intersects line curve =
+    let get-lineseg-intersects curve line =
         if is-line curve then
-            get-line-line-intersects line (as-edges curve)
+            get-line-line-intersects (as-edges curve) line
         else
             let f = get-position-in-line line in
-            get-line-intersects line curve
-                |> List.fold-right (fun v acc -> (
-                    let u = get-point v curve |> f in
-                    (u, v)::acc
+            get-line-intersects curve line
+                |> List.fold-right (fun u acc -> (
+                    let v = get-point u curve |> f in
+                    if ulim1 <. v && v <. ulim2 then
+                        (u, v)::acc
+                    else
+                        acc
                 )) []
 
 
-    let get-lineseg-intersections (pa, pe) curve =
-        get-lineseg-intersects (pa, pe) curve
-            |> List.map (fun (u, v) -> (
-                (pa *.. u) +.. (pe *.. (1. -. u))
+    let get-lineseg-intersections curve (pa, pe) =
+        get-lineseg-intersects curve (pa, pe)
+            |> List.map (fun (u, _) -> (
+                get-point u curve
             ))
 
 
-    let get-intersect-ranges-between-lines (pa1, pa2) (pb1, pb2) curve =
-        let ts1 = get-line-intersects (pa1, pa2) curve in
-        let ts2 = get-line-intersects (pb1, pb2) curve in
-        let-rec sort-ts ts1 ts2 = match (ts1, ts2) with
-            | ([], []) -> []
-            | (t1::rts1, []) -> (1, t1) :: (sort-ts rts1 [])
-            | ([], t2::rts2) -> (2, t2) :: (sort-ts [] rts2)
-            | (t1::rts1, t2::rts2) ->
-                  if t2 <. t1 then
-                      (2, t2) :: (sort-ts (t1::rts1) rts2)
-                  else
-                      (1, t1) :: (sort-ts rts1 (t2::rts2))
-        in
-        let (t0, lst) = match sort-ts ts1 ts2 with
-        | [] -> (0.5, [])
-        | (ln, t):: rlist ->
-              if t =. 0. then
-                  match rlist with
-                  | (_, t2) :: rlist2 ->
-                        ((t +. t2) /. 2., rlist)
-                  | _ -> (0.5, [])
-              else
-                  (0., (ln, t)::rlist)
-        in
-        let p0 = get-point t0 curve in
-        let l1 = point-divide (pb1 -.. pa1) (p0 -.. pa1) in
-        let l2 = point-divide (pa1 -.. pb1) (p0 -.. pb1) in
-        let state = if l1 <' 0pt then 1 else if l2 <' 0pt then 2 else 0 in
-        let (state, t, res) = lst |> List.fold-left (fun (state, t0, res) (ln, t) ->
-            (
-                int-abs (state - ln), t,
-                if state == 0 then (List.append res [(t0, t)]) else res
-            )
-        ) (state, 0., []) in
-        let res = if t =. 1. || state <> 0 then
-                res
-            else
-                List.append res [(t, 1.)]
-        in
-        res
+    % let get-intersect-ranges-between-lines (pa1, pa2) (pb1, pb2) curve =
+    %     let ts1 = get-line-intersects curve (pa1, pa2) in
+    %     let ts2 = get-line-intersects curve (pb1, pb2) in
+    %     let-rec sort-ts ts1 ts2 = match (ts1, ts2) with
+    %         | ([], []) -> []
+    %         | (t1::rts1, []) -> (1, t1) :: (sort-ts rts1 [])
+    %         | ([], t2::rts2) -> (2, t2) :: (sort-ts [] rts2)
+    %         | (t1::rts1, t2::rts2) ->
+    %               if t2 <. t1 then
+    %                   (2, t2) :: (sort-ts (t1::rts1) rts2)
+    %               else
+    %                   (1, t1) :: (sort-ts rts1 (t2::rts2))
+    %     in
+    %     let (t0, lst) = match sort-ts ts1 ts2 with
+    %     | [] -> (0.5, [])
+    %     | (ln, t):: rlist ->
+    %           if t =. 0. then
+    %               match rlist with
+    %               | (_, t2) :: rlist2 ->
+    %                     ((t +. t2) /. 2., rlist)
+    %               | _ -> (0.5, [])
+    %           else
+    %               (0., (ln, t)::rlist)
+    %     in
+    %     let p0 = get-point t0 curve in
+    %     let l1 = point-divide (pb1 -.. pa1) (p0 -.. pa1) in
+    %     let l2 = point-divide (pa1 -.. pb1) (p0 -.. pb1) in
+    %     let state = if l1 <' 0pt then 1 else if l2 <' 0pt then 2 else 0 in
+    %     let (state, t, res) = lst |> List.fold-left (fun (state, t0, res) (ln, t) ->
+    %         (
+    %             int-abs (state - ln), t,
+    %             if state == 0 then (List.append res [(t0, t)]) else res
+    %         )
+    %     ) (state, 0., []) in
+    %     let res = if t =. 1. || state <> 0 then
+    %             res
+    %         else
+    %             List.append res [(t, 1.)]
+    %     in
+    %     res
 
-
+    
     let-rec get-intersects-inner delta (u0, u1, cu) (v0, v1, cv) =
         let bbu = get-bbox cu in
         let bbv = get-bbox cv in
@@ -333,13 +386,14 @@ end = struct
             let (lu, lv) = (get-simple-norm cu, get-simple-norm cv) in
             if lu <' delta *' 3.5 && lv <' delta *' 3.5 then
                 if lu <' lv then
-                    get-lineseg-intersects (as-edges cu) cv
-                        |> List.map (fun (u, v) -> (
+                    get-lineseg-intersects cv (as-edges cu)
+                        |> sort sortf
+                        |> List.map (fun (v, u) -> (
                             u0 +. (u1 -. u0) *. u, v0 +. (v1 -. v0) *. v)
                         )
                 else
-                    get-lineseg-intersects (as-edges cv) cu
-                        |> List.map (fun (v, u) -> (
+                    get-lineseg-intersects cu (as-edges cv)
+                        |> List.map (fun (u, v) -> (
                             u0 +. (u1 -. u0) *. u, v0 +. (v1 -. v0) *. v)
                         )
             else
@@ -348,13 +402,13 @@ end = struct
                     let vm = (v0 +. v1) /. 2. in
                     let res1 = get-intersects-inner delta (u0, u1, cu) (v0, vm, cvl) in
                     let res2 = get-intersects-inner delta (u0, u1, cu) (vm, v1, cvr) in
-                    res1 |> List.append res2
+                    sorted-merge sortf res1 res2
                 else
                     let (cul, cur) = split-at 0.5 cu in
                     let um = (u0 +. u1) /. 2. in
                     let res1 = get-intersects-inner delta (u0, um, cul) (v0, v1, cv) in
                     let res2 = get-intersects-inner delta (um, u1, cur) (v0, v1, cv) in
-                    res1 |> List.append res2
+                    List.append res1 res2
                 % % let f = get-intersects-inner-algo-split 3 delta in
                 % let f = get-intersects-inner-algo-split 5 delta in
                 % % let f = get-intersects-inner-algo-clipping delta in
@@ -365,82 +419,84 @@ end = struct
         else []
 
 
-    and get-intersects-inner-algo-clipping delta (u0, u1, cu) (v0, v1, cv) =
-        let (l1, l2) = get-rough-closure-lines cv in
-        let spanlst = get-intersect-ranges-between-lines l1 l2 cu in
-        let l = spanlst |> List.fold-left (fun ret (u0, u1) -> ret +. u1 -. u0) 0. in
-        if l <. 0.8 then
-            spanlst |> List.map (fun (uu0, uu1) -> (
-                let (uu0, uu1) = (u0 +. (u1 -. u0) *. uu0,
-                    u0 +. (u1 -. u0) *. uu1) in
-                get-intersects-inner delta (uu0, uu1, cu) (v0, v1, cv)
-            )) |> List.concat
-        else
-            let (l1, l2) = get-rough-closure-lines cu in
-            let spanlst = get-intersect-ranges-between-lines l1 l2 cv in
-            let l = spanlst |> List.fold-left (fun ret (v0, v1) -> ret +. v1 -. v0) 0. in
-            if l <. 0.8 then
-                spanlst |> List.map (fun (vv0, vv1) -> (
-                    let (vv0, vv1) = (v0 +. (v1 -. v0) *. vv0,
-                        v0 +. (v1 -. v0) *. vv1) in
-                    get-intersects-inner delta (u0, u1, cu) (vv0, vv1, cv)
-                )) |> List.concat
-            else
-                %get-intersects-inner-algo-split 3 delta (u0, u1, cu) (v0, v1, cv)
-                get-intersects-inner-algo-split 5 delta (u0, u1, cu) (v0, v1, cv)
+    % and get-intersects-inner-algo-clipping delta (u0, u1, cu) (v0, v1, cv) =
+    %     let (l1, l2) = get-rough-closure-lines cv in
+    %     let spanlst = get-intersect-ranges-between-lines l1 l2 cu in
+    %     let l = spanlst |> List.fold-left (fun ret (u0, u1) -> ret +. u1 -. u0) 0. in
+    %     if l <. 0.8 then
+    %         spanlst |> List.map (fun (uu0, uu1) -> (
+    %             let (uu0, uu1) = (u0 +. (u1 -. u0) *. uu0,
+    %                 u0 +. (u1 -. u0) *. uu1) in
+    %             get-intersects-inner delta (uu0, uu1, cu) (v0, v1, cv)
+    %         )) |> List.concat
+    %     else
+    %         let (l1, l2) = get-rough-closure-lines cu in
+    %         let spanlst = get-intersect-ranges-between-lines l1 l2 cv in
+    %         let l = spanlst |> List.fold-left (fun ret (v0, v1) -> ret +. v1 -. v0) 0. in
+    %         if l <. 0.8 then
+    %             spanlst |> List.map (fun (vv0, vv1) -> (
+    %                 let (vv0, vv1) = (v0 +. (v1 -. v0) *. vv0,
+    %                     v0 +. (v1 -. v0) *. vv1) in
+    %                 get-intersects-inner delta (u0, u1, cu) (vv0, vv1, cv)
+    %             )) |> List.concat
+    %         else
+    %             %get-intersects-inner-algo-split 3 delta (u0, u1, cu) (v0, v1, cv)
+    %             get-intersects-inner-algo-split 5 delta (u0, u1, cu) (v0, v1, cv)
 
 
-    and get-intersects-inner-algo-split count delta (u0, u1, cu) v =
-        % cu is longer than cv
-        % let () = display-float `uuu0` u0 in
-        % let () = display-float `uuu1` u1 in
-        let (ret, lst, acc, uu) = 
-            range-span u0 u1 count
-            |> List.fold-left (fun (ret, lst, acc, uu) (uu0, uu1) -> (
-                let c = split-span uu0 uu1 cu in
-                let ans = get-intersects-inner delta (uu0, uu1, c) v in
-                if uu =. uu0 then
-                    if List.is-empty ans then
-                        (ret, lst, [], uu1)
-                    else  % beginning of new span
-                        (ret, lst, ans, uu0)
-                else if List.is-empty ans then
-                    if List.is-empty acc then % end of disabled span
-                        (ret, (uu, uu0) :: lst, [], uu1)
-                    else % end of enabled span
-                        (List.append ret acc, lst, [], uu1)
-                else % disable current span
-                    (ret, lst, [], uu)
-            )) ([], [], [], u0)
-        in
-        let ret = List.append ret acc in
-        match lst with
-        | [] -> ret
-        | [(uu0, uu1)] -> if uu0 =. u0 && uu1 =. u1 then
-              %if count < 7 then
-              %    get-intersects-inner-algo-split (count + 2) delta (u0, u1, cu) v
-              %else
-                  []
-            else get-intersects-inner delta (uu0, uu1, cu) v |> List.append ret
-        | lst -> lst
-              |> List.map (fun (uu0, uu1) -> get-intersects-inner delta (uu0, uu1, cu) v)
-              |> List.concat
-              |> List.append ret
+    % and get-intersects-inner-algo-split count delta (u0, u1, cu) v =
+    %     % cu is longer than cv
+    %     % let () = display-float `uuu0` u0 in
+    %     % let () = display-float `uuu1` u1 in
+    %     let (ret, lst, acc, uu) = 
+    %         range-span u0 u1 count
+    %         |> List.fold-left (fun (ret, lst, acc, uu) (uu0, uu1) -> (
+    %             let c = split-span uu0 uu1 cu in
+    %             let ans = get-intersects-inner delta (uu0, uu1, c) v in
+    %             if uu =. uu0 then
+    %                 if List.is-empty ans then
+    %                     (ret, lst, [], uu1)
+    %                 else  % beginning of new span
+    %                     (ret, lst, ans, uu0)
+    %             else if List.is-empty ans then
+    %                 if List.is-empty acc then % end of disabled span
+    %                     (ret, (uu, uu0) :: lst, [], uu1)
+    %                 else % end of enabled span
+    %                     (List.append ret acc, lst, [], uu1)
+    %             else % disable current span
+    %                 (ret, lst, [], uu)
+    %         )) ([], [], [], u0)
+    %     in
+    %     let ret = List.append ret acc in
+    %     match lst with
+    %     | [] -> ret
+    %     | [(uu0, uu1)] -> if uu0 =. u0 && uu1 =. u1 then
+    %           %if count < 7 then
+    %           %    get-intersects-inner-algo-split (count + 2) delta (u0, u1, cu) v
+    %           %else
+    %               []
+    %         else get-intersects-inner delta (uu0, uu1, cu) v |> List.append ret
+    %     | lst -> lst
+    %           |> List.map (fun (uu0, uu1) -> get-intersects-inner delta (uu0, uu1, cu) v)
+    %           |> List.concat
+    %           |> List.append ret
 
 
     let get-intersects delta curve1 curve2 =
         if is-line curve1 then
-            get-lineseg-intersects (as-edges curve1) curve2
+            get-lineseg-intersects curve2 (as-edges curve1)
+                |> sort sortf |> List.map replacef
         else if is-line curve2 then
-            get-lineseg-intersects (as-edges curve2) curve1
+            get-lineseg-intersects curve1 (as-edges curve2)
                 |> List.map (fun (v, u) -> (u, v))
         else
-            let (clst1, clst2) = (reduce curve1, reduce curve2) in
-            clst1 |> List.map (fun u -> (
-                clst2 |> List.map (fun v -> (
-                    get-intersects-inner delta u v
-                )) |> List.concat
-            )) |> List.concat
+            get-intersects-inner delta (0., 1., curve1) (0., 1., curve2)
+            %let (clst1, clst2) = (reduce curve1, reduce curve2) in
+            %clst1 |> List.map (fun u -> (
+            %    clst2 |> List.map (fun v -> (
+            %        get-intersects-inner delta u v
+            %    )) |> List.concat
+            %)) |> List.concat
 
 
     let get-intersections delta curve1 curve2 =
@@ -452,26 +508,27 @@ end = struct
             ))
         
 
-    let get-self-intersects delta curve =
-        if is-line curve then []
-        else
-            let clst = reduce curve in
-            clst |> List.mapi (fun i ci -> (
-                clst |> List.fold-lefti (fun j ret cj -> (
-                    if i + 1 < j then
-                        get-intersects-inner delta ci cj
-                            |> List.append ret
-                    else ret
-                )) [])) |> List.concat
-
-
-    let get-self-intersections delta curve =
-        get-self-intersects delta curve
-            |> List.map (fun (u, v) -> (
-                let pu = get-point u curve in
-                let pv = get-point v curve in
-                (pu +.. pv) *.. 0.5
-            ))
+%    let get-self-intersects delta curve =
+%        if is-line curve then []
+%        else
+%            get-intersects-inner delta curve curve
+%            let clst = reduce curve in
+%            clst |> List.mapi (fun i ci -> (
+%                clst |> List.fold-lefti (fun j ret cj -> (
+%                    if i + 1 < j then
+%                        get-intersects-inner delta ci cj
+%                            |> List.append ret
+%                    else ret
+%                )) [])) |> List.concat
+%
+%
+%    let get-self-intersections delta curve =
+%        get-self-intersects delta curve
+%            |> List.map (fun (u, v) -> (
+%                let pu = get-point u curve in
+%                let pv = get-point v curve in
+%                (pu +.. pv) *.. 0.5
+%            ))
 
 
     let run-debug () =

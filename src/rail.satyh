@@ -25,6 +25,7 @@ module XPathRail : sig
     val inverse : t -> t
     val take-from-point : point -> t -> t option
     val into-list : t -> point * (((point * point) option * point) list)
+    val migrate-locations : loc list -> loc list -> loc list
 
     val line-to : point -> t -> t
     val bezier-to : point -> point -> point -> t -> t
@@ -32,9 +33,18 @@ module XPathRail : sig
     val close-with-bezier : point -> point -> t -> t
     val shift : point -> t -> t
     val linear-transform : float * float * float * float -> t -> t
+    val get-rough-length : length -> t -> length
+    val get-rough-loc-from-length : length -> length -> t -> loc option
 
-    val get-cross-points-self : length -> t -> loc list
-    val get-cross-points : length -> t -> t -> (loc list) * (loc list)
+    val loc-to-point : loc -> point
+    val loc-to-pos : length -> t -> loc -> float
+    val pos-to-loc : length -> t -> float -> loc
+    val compare-loc : loc -> loc -> int
+
+    val get-cross-self : length -> t -> loc list
+    val get-cross-points-self : length -> t -> point list
+    val get-cross : length -> t -> t -> (loc list) * (loc list)
+    val get-cross-points : length -> t -> t -> point list
     val split-at-locations : length -> loc list -> t -> t list
 
     %%! Get a list of loc and fix the point of locs to the nearest point in pts.
@@ -69,19 +79,19 @@ end = struct
 
 
     let line-to p (pa, pe, cs) =
-        (pa, p, List.append cs [
-            XPathCurve.from-controls (pe, pe, p, p)
-        ])
+        (pa, p, List.append cs (
+            XPathCurve.reduce-only (XPathCurve.from-controls (pe, pe, p, p))
+        ))
 
 
     let bezier-to p1 p2 p (pa, pe, cs) =
-        (pa, p, List.append cs [
-            XPathCurve.from-controls (pe, p1, p2, p)
-        ])
+        (pa, p, List.append cs (
+            XPathCurve.reduce-only (XPathCurve.from-controls (pe, p1, p2, p))
+        ))
 
 
     let close-with-bezier p1 p2 (pa, pe, cs) =
-        (pe, pe, (XPathCurve.from-controls (pe, p1, p2, pa))::cs)
+        (pa, pa, List.append cs (XPathCurve.reduce-only (XPathCurve.from-controls (pe, p1, p2, pa))))
 
 
     let shift p (pa, pe, cs) =
@@ -200,7 +210,7 @@ end = struct
         else None
 
 
-    let add-sorted items lst =
+    let migrate-locations items lst =
         let (res, items) = lst |> List.fold-right (fun (j, v, pj) (res, items) -> (
             let (res, items) = items |> List.fold-right (fun (i, u, pi) (res, items) -> (
                 if j < i || (i == j && v <. u) then
@@ -213,34 +223,34 @@ end = struct
         List.append items res
 
 
-    let get-cross-points-self delta (_, _, cs) =
+    let get-cross-self delta (_, _, cs) =
         let (cse, max) = cs |> List.fold-right (fun c (res, max) -> (
             ((c, delta /' (XPathCurve.get-simple-norm c))::res, max + 1)
         )) ([], -1) in
         cse |> List.fold-lefti (fun i ret (ci, ei) -> (
             cse |> List.fold-lefti (fun j ret (cj, ej) -> (
-                if i > j then ret
+                if i >= j then ret
                 else
                     if i == 0 && j == max then
-                        if max <= 1 then
-                            XPathCurve.get-self-intersects delta ci
-                                |> List.fold-right (fun (u, v) ret -> (
-                                    if (
-                                        (float-abs (v -. 1.) <. ej &&
-                                        float-abs u <. ei) ||
-                                        (float-abs (u -. 1.) <. ei &&
-                                        float-abs v <. ej)
-                                    ) then ret
-                                    else
-                                        let p = XPathCurve.get-point-from-curves-and-pos ci cj (u, v) in
-                                        ret |> add-sorted (
-                                            if i < j || u <=. v then
-                                                [(i, u, p); (j, v, p)]
-                                            else
-                                                [(j, v, p); (i, u, p)]
-                                        )
-                                )) ret
-                        else
+                        %if max <= 1 then
+                        %    XPathCurve.get-self-intersects delta ci
+                        %        |> List.fold-right (fun (u, v) ret -> (
+                        %            if (
+                        %                (float-abs (v -. 1.) <. ej &&
+                        %                float-abs u <. ei) ||
+                        %                (float-abs (u -. 1.) <. ei &&
+                        %                float-abs v <. ej)
+                        %            ) then ret
+                        %            else
+                        %                let p = XPathCurve.get-point-from-curves-and-pos ci cj (u, v) in
+                        %                ret |> migrate-locations (
+                        %                    if i < j || u <=. v then
+                        %                        [(i, u, p); (j, v, p)]
+                        %                    else
+                        %                        [(j, v, p); (i, u, p)]
+                        %                )
+                        %        )) ret
+                        %else
                             XPathCurve.get-intersects delta ci cj
                                 |> List.fold-right (fun (u, v) ret -> (
                                     if (float-abs (v -. 1.) <. ej &&
@@ -248,19 +258,8 @@ end = struct
                                     then ret
                                     else
                                         let p = XPathCurve.get-point-from-curves-and-pos ci cj (u, v) in
-                                        ret |> add-sorted [(i, u, p); (j, v, p)]
+                                        ret |> migrate-locations [(i, u, p); (j, v, p)]
                                 )) ret
-                    else if i == j then
-                        XPathCurve.get-self-intersects delta ci
-                            |> List.fold-right (fun (u, v) ret -> (
-                                let p = XPathCurve.get-point-from-curves-and-pos ci cj (u, v) in
-                                ret |> add-sorted (
-                                    if u <=. v then
-                                        [(i, u, p); (j, v, p)]
-                                    else
-                                        [(j, v, p); (i, u, p)]
-                                )
-                            )) ret
                     else if i + 1 == j then
                         XPathCurve.get-intersects delta ci cj
                             |> List.fold-right (fun (u, v) ret -> (
@@ -269,31 +268,43 @@ end = struct
                                 then ret
                                 else
                                     let p = XPathCurve.get-point-from-curves-and-pos ci cj (u, v) in
-                                    ret |> add-sorted [(i, u, p); (j, v, p)]
+                                    ret |> migrate-locations [(i, u, p); (j, v, p)]
                             )) ret
                     else
                         XPathCurve.get-intersects delta ci cj
                             |> List.fold-right (fun (u, v) ret -> (
                                 let p = XPathCurve.get-point-from-curves-and-pos ci cj (u, v) in
-                                ret |> add-sorted [(i, u, p); (j, v, p)]
+                                ret |> migrate-locations [(i, u, p); (j, v, p)]
                             )) ret
             )) ret
         )) []
 
 
-    let get-cross-points delta (_, _, cs1) (_, _, cs2) =
+    let loc-to-point (_, _, p) = p
+
+
+    let get-cross-points-self delta rail =
+        get-cross-self delta rail |> List.map loc-to-point
+
+
+    let get-cross delta (_, _, cs1) (_, _, cs2) =
         cs1 |> List.fold-lefti (fun i rs ci -> (
             cs2 |> List.fold-lefti (fun j rs cj -> (
                 XPathCurve.get-intersects delta ci cj
                     |> List.fold-right (fun (u, v) (rs1, rs2) -> (
                         let p = XPathCurve.get-point-from-curves-and-pos ci cj (u, v) in
                         (
-                            rs1 |> add-sorted [(i, u, p)],
-                            rs2 |> add-sorted [(j, v, p)]
+                            List.append rs1 [(i, u, p)],
+                            rs2 |> migrate-locations [(j, v, p)]
                         )
                     )) rs
             )) rs
         )) ([], [])
+
+
+    let get-cross-points delta rail1 rail2 =
+        let (xs, _) = get-cross delta rail1 rail2 in
+        xs |> List.map loc-to-point
 
 
     let fix-locations delta locs pts =
@@ -332,14 +343,72 @@ end = struct
         List.append ret [res]
 
 
-        let into-list (pa, _, cs) =
-            let lst = cs |> List.map (fun c -> (
-                let (p0, p1, p2, p3) = XPathCurve.as-controls c in
-                if p0 =.. p1 && p2 =.. p3 then
-                    (None, p3)
-                else
-                    (Some((p1, p2)), p3)
-            )) in
-            (pa, lst)
+    let into-list (pa, _, cs) =
+        let lst = cs |> List.map (fun c -> (
+            let (p0, p1, p2, p3) = XPathCurve.as-controls c in
+            if p0 =.. p1 && p2 =.. p3 then
+                (None, p3)
+            else
+                (Some((p1, p2)), p3)
+        )) in
+        (pa, lst)
+
+
+    let get-rough-length delta (_, _, cs) =
+        cs |> List.fold-left (fun len c -> (len +' XPathCurve.get-rough-length delta c)) 0pt
+
+
+    let get-rough-loc-from-length delta len (_, _, cs) =
+        let-rec impl i len cs =
+            match cs with
+            | [] -> None
+            | c::cs -> (
+                  let (l, res) = XPathCurve.get-rough-pos-from-length delta len c in
+                  match res with
+                  | None -> impl (i + 1) (len -' l) cs
+                  | Some(p) -> Some((i, p, XPathCurve.get-point p c))
+            )
+        in
+        impl 0 len cs
+
+
+    let loc-to-pos delta (_, _, cs) (i, p, _) =
+        let-rec impl i len cs =
+            match cs with
+            | [] -> display-message `ERROR in loc-to-pos` before
+                  (XPathCurve.nil, 0pt, 0pt)
+            | c::cs ->
+                  if i == 0 then
+                      let l = (c::cs) |>  List.fold-left (fun len c -> (
+                          len +' XPathCurve.get-rough-length delta c)) 0pt
+                      in
+                      (c, len, len +' l)
+                  else
+                      let len = len +' XPathCurve.get-rough-length delta c in
+                      impl (i - 1) len cs
+        in
+        let (c, len, l) = impl i 0pt cs in
+        let (c0, _) = XPathCurve.split-at p c in
+        let len = len +' (XPathCurve.get-rough-length delta c0) in
+        len /' l
+
+
+    let pos-to-loc delta rail p =
+        let len = get-rough-length delta rail in
+        let len = len *' p in
+        match get-rough-loc-from-length delta len rail with
+        | Some(l) -> l
+        | None -> display-message `ERROR in pos-to-loc` before
+              (0, 0., point-nil)
+
+
+    let compare-loc (i, u, _) (j, v, _) =
+        let d = j - i in
+        if d <> 0 then
+            d
+        else
+            if u <. v then 1
+            else if u =. v then 0
+            else 0 - 1
 
 end
