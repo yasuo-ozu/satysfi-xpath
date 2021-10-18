@@ -11,6 +11,7 @@ module XPathRail : sig
 
     type t
     type loc
+    val nil : t
     val from-curve : curve -> t
     val as-edges : t -> point * point
     val set-edges : point * point -> t -> t
@@ -50,6 +51,10 @@ module XPathRail : sig
     %%! Get a list of loc and fix the point of locs to the nearest point in pts.
     val fix-locations : length -> loc list -> point list -> (loc list) * (point list)
 
+    val get-touchstone : t -> loc
+    val get-derivative : loc -> t -> point
+    val get-line-intersects : t -> point * point -> loc list
+
 end = struct
 
     type t = point * point * (curve list)
@@ -63,6 +68,7 @@ end = struct
     let begins-with p (pa, _, _) = p =.. pa
     let ends-with p (_, pe, _) = p =.. pe
     let faced-with p (pa, pe, _) = p =.. pa || p =.. pe
+    let nil = from-curve (XPathCurve.nil)
 
 
     let linear-transform (a, b, c, d) (pa, pe, cs) =
@@ -407,8 +413,33 @@ end = struct
         if d <> 0 then
             d
         else
-            if u <. v then 1
-            else if u =. v then 0
+            if float-abs (u -. v) <. eps then 0
+            else if u <. v then 1
             else 0 - 1
+
+
+    let get-touchstone (_, _, cs) =
+        let p = match cs with
+        | [] -> display-message `ERROR in get-touchstone` before point-nil
+        | c::_ -> XPathCurve.get-point 0.5 c
+        in
+        (0, 0.5, p)
+
+
+    let get-derivative (i, u, _) (_, _, cs) =
+        match (List.nth i cs) with
+        | None -> display-message `ERROR in get-derivative` before point-nil
+        | Some(c) -> XPathCurve.get-derivative u c
+
+    
+    let get-line-intersects (_, _, cs) line =
+        cs |> List.mapi (fun i c -> (
+            XPathCurve.get-line-intersects c line
+            |> List.map (fun u -> (
+                i, u,
+                XPathCurve.get-point u c
+            ))
+        )) |> List.concat
+
 
 end

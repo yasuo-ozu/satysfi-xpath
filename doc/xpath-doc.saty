@@ -7,33 +7,21 @@
 
 @import: ../src/xpath
 @import: ../src/util
-@import: ../src/visualizer
+% @import: ../src/visualizer
 
-let-inline ctx \test-path cmd =
-    let gs = XPathVisualizer.(
-        cmd |> from-path
-            |> show-fill
-            |> show-curve
-            |> show-handles
-            |> show-intersections 1pt
-            % |> show-element-bboxes
-            |> draw
-    ) in
-    let ((x1, y1), (x2, y2)) =
-        match gs with
+let-inline ctx \test-path gs =
+    let bboxs = gs |> List.map get-graphics-bbox in
+    let ((x1, y1), (x2, y2)) = match gs with
         | [] -> ((0pt, 0pt), (0pt, 0pt))
-        | g::gs ->
-              gs |> List.fold-left (fun ret g -> (
-                  let bbox = get-graphics-bbox g in
-                  XPathUtil.concat-bbox ret bbox
-              )) (get-graphics-bbox g)
+        | g::gs -> gs |> List.fold-left (fun ret g -> (
+              get-graphics-bbox g |> concat-bbox ret
+        )) (get-graphics-bbox g)
     in
     let w = x2 -' x1 in
     let h = y2 -' y1 in
     inline-graphics w h 0pt (fun (x, y) -> (
-        gs |> List.map( shift-graphics (x -' x1, y -' y1))
+        gs |> List.map (shift-graphics (x -' x1, y -' y1))
     ))
-
 in
 
 let () = XPathCurve.run-debug () in
@@ -41,75 +29,193 @@ document (|
   title = {XPath パッケージ};
   author = {The XPath Contributors};
 |) '<
-    +p {
-        \test-path(
-            XPath.(
-                let p1 = start-path (0cm, -4cm)
-                    |> bezier-to (5cm, -4cm) (5cm, 4cm) (0cm, 4cm)
-                    |> terminate-path in
-                let p2 = start-path (1cm, -4cm)
-                    |> line-to (1cm, 4cm)
-                    |> terminate-path in
-                unite-path p1 p2
-            )
-        );
-        % \test-path(
-        %     XPath.(
-        %         let p1 = start-path (-2cm, 0cm)
-        %             |> bezier-to (-4cm, 2cm) (4cm, 2cm) (4cm, 0cm)
-        %             |> terminate-path in
-        %         let p2 = start-path (-2.4cm, -0.5cm)
-        %             |> line-to (-2.4cm, 2.5cm)
-        %             |> terminate-path in
-        %         let p3 = start-path (-1.5cm, 1cm)
-        %             |> bezier-to (-1cm, 4cm) (1cm, -1cm) (1.5cm, 2cm)
-        %             |> terminate-path in
-        %         unite-path (unite-path p1 p2) p3
-        %     )
-        % );
-        \test-path(
-            XPath.(
-                let p1 =
-                    start-path (0pt, 0pt)
-                    |> line-to (3cm, 3cm)
-                    %start-path (3cm, 3cm)
-                    |> bezier-to (6cm, 6cm) (3cm, 0cm) (9cm, 6cm)
-                    %|> bezier-to (10cm, 9cm) (3cm, 0cm) (5cm, -2cm)
-                    %|> close-with-bezier (4cm, -3cm) (1cm, -1cm)
-                    |> terminate-path
-                in
-                let p3 = start-path (3cm, 3cm)
-                    |> line-to (0cm, 0cm)
-                    |> line-to (9cm, 6cm)
-                    |> bezier-to (6cm, 6cm) (3cm, 0cm) (9cm, 6cm)
-                    |> terminate-path
-                in
-                p3
-                % let p2 = start-path (1cm, 2.5cm)
-                %     |> line-to (8cm, 2.5cm)
-                %     |> terminate-path in
-                % p2
-                %unite-path p1 p2
-            )
-        );
-        % \test-path(
-        %     XPath.(
-        %         start-path (5.3mm, 1mm)
-        %             |> bezier-to (5.3mm, 1mm) (-2mm, 4.7mm) (1.2mm, 13.2mm)
-        %             |> bezier-to (4.5mm, 21.6mm) (7.3mm, 3.6mm) (13.5mm, 11.1mm)
-        %             |> bezier-to (19.7mm, 18.7mm) (3.3mm, 15.6mm) (2.4mm, 10.6mm)
-        %             |> bezier-to (1.5mm, 5.6mm) (39mm, 23.2mm) (29.1mm, 25.1mm)
-        %             |> bezier-to (19.12mm, 26.9mm) (11.1mm, 25.8mm) (11.1mm, 25.8mm)
-        %             |> line-to (28.3mm, 4.1mm)
-        %             |> line-to (14.1mm, 4.8mm)
-        %             |> line-to (33.3mm, 32.1mm)
-        %             |> line-to (1.9mm, 7.8mm)
-        %             |> bezier-to (1.9mm, 7.8mm) (25.7mm, -7.7mm) (21.2mm, -6.7mm)
-        %             |> bezier-to (16.8mm, 21.3mm) (23.1mm, 21.7mm) (34.3mm, 21.9mm)
-        %             |> bezier-to (45.4mm, 22mm) (14.9mm, -2.2mm) (5.3mm, 1mm)
-        %             |> close-with-line
-        %     )
-        % );
+     +chapter{基本的なコマンド}<
+         +section{パスの組み立て}<
+             +p {
+                 \code(`satysfi-xpath`);は、端的に言えばパスを表す独自の型である\code(`XPath.t`);及び未完パスを表す\code(`XPath.pre`);を扱うためのライブラリです。これらは\SATySFi;における\code(`path`);及び\code(`pre-path`);に対応します。
+             }
+             +p {
+                 \code(`satysfi-xpath`);は\SATySFi;が持つパス操作コマンドと互換性のあるコマンドをサポートしており、\code(`opan XPath`);とすることにより、\SATySFi;の提供するパス操作コマンドを置き換えることもできます(推奨はしない)。
+             }
+             +p {
+                 具体的には、以下のコマンドをサポートします。
+             }
+             +code(```
+XPath.unite-path : XPath.t -> XPath.t -> XPath.t
+XPath.shift-path : point -> XPath.t -> XPath.t
+XPath.linear-transform-path : float -> float -> float -> float -> XPath.t -> XPath.t
+XPath.get-path-bbox : XPath.t -> point * point
+XPath.start-path : point -> XPath.pre
+XPath.line-to : point -> XPath.pre -> XPath.pre
+XPath.bezier-to : point -> point -> point -> XPath.pre -> XPath.pre
+XPath.terminate-path : XPath.pre -> XPath.t
+XPath.close-with-line : XPath.pre -> XPath.t
+XPath.close-with-bezier : point -> point -> XPath.pre -> XPath.t
+XPath.stroke : length -> color -> XPath.t -> graphics
+XPath.fill : color -> XPath.t -> graphics
+XPath.dashed-stroke : length -> length * length * length -> color -> XPath.t -> graphics
+             ```);
+         >
+         +section{例}<
+             +code(```
+XPath.(
+    start-path (0pt, 0pt)
+    |> line-to (2cm, 2cm)
+    |> close-with-bezier (2cm, 0cm) (2cm, 0cm)
+    |> stroke 5pt (Color.blue)
+)
+            ```);
+            +p {
+                とすると、\test-path(
+                    [
+                        XPath.(
+                            start-path (0pt, 0pt)
+                                |> line-to (2cm, 2cm)
+                                |> close-with-bezier (2cm, 0cm) (2cm, 0cm)
+                                |> stroke 5pt (Color.blue)
+                        )
+                    ]
+                );となります。
+            }
 
-    }
+         >
+         +section{組み込み型との変換}<
+             +p {
+                 \code(`XPath.t`);, \code(`XPath.pre`);を\SATySFi;に組み込みの\code(`path`);, \code(`pre-path`);に変換するため、以下のコマンドが用意されています。
+             }
+             +code(```
+XPath.to-embedded-path : XPath.t -> path
+XPath.to-embedded-prepath : XPath.pre -> pre-path
+             ```);
+             +p {
+                 逆に、\SATySFi;の組み込み型から\code(`satysfi-xpath`);の型に変換する方法はありません。
+             }
+         >
+     >
+     +chapter{便利な機能}<
+         +p {
+             ここでは、\SATySFi;の組み込み\code(`path`);機能にはない、\code(`satysfi-xpath`);独自の便利な機能について説明します。
+         }
+         +section{交点を求めるコマンド}<
+             +p {
+                 交点を求める機能として以下が提供されています。
+             }
+             +code(```
+XPath.get-intersections : length -> XPath.t -> point list
+XPath.get-intersections-with : length -> XPath.pre -> XPath.t -> point list
+             ```);
+             +listing{
+                 * \code(`get-intersections eps pat`);${\cdots}与えられたパス\code(`pat`);の内部の交点(\code(`point`);型)のリストを得ます。\code(`eps`);は精度です。
+                 * \code(`get-intersections-with eps ppat pat `);${\cdots}与えられた未完パス\code(`ppat`);がパス\code(`pat`);と交わる点のリストを得ます。得られる点列は\code(`ppat`);上で順番になっています。
+             }
+             +p {
+                 例えば、以下のコード
+             }
+             +p {
+                 \test-path(
+                     let pat = XPath.(
+                         start-path (0pt, 0pt)
+                         |> line-to (2cm, 2cm)
+                         |> close-with-bezier (2cm, 0cm) (2cm, 0cm)
+                     ) in
+                     let ppat = XPath.(
+                         start-path (4cm, -2cm)
+                         |> line-to (0cm, 2cm)
+                     ) in
+                     let pts = XPath.get-intersections-with 0.1pt ppat pat in
+                     let () = pts |> List.fold-left (fun res (x, y) -> (
+                         let xs = show-float (x /' 1cm) in
+                         let ys = show-float (y /' 1cm) in
+                         res ^ `(` ^ xs ^ `, ` ^ ys ^ `) `
+                     )) ` ` |> display-message in
+                     let (p1, p2) = match pts with
+                         | p1::p2::_ -> (p1, p2)
+                         | _ -> ((0pt, 0pt), (0pt, 0pt))
+                     in
+                     XPath.(
+                         [
+                             pat |> stroke 5pt (Color.blue);
+                             ppat |> terminate-path |> stroke 1pt (Color.black);
+                             start-path (4cm, -2cm) |> line-to p1 |> terminate-path |> stroke 2pt (Color.red);
+                             start-path p2 |> line-to (0cm, 2cm) |> terminate-path |> stroke 2pt (Color.blue);
+                         ]
+                     )
+                 );
+             }
+             
+         >
+     >
+     +chapter{今後追加する機能}<>
+     +chapter{内部実装}<>
+    % +p {
+    %     \test-path(
+    %         XPath.(
+    %             let p1 = start-path (0cm, -4cm)
+    %                 |> bezier-to (5cm, -4cm) (5cm, 4cm) (0cm, 4cm)
+    %                 |> terminate-path in
+    %             let p2 = start-path (1cm, -4cm)
+    %                 |> line-to (1cm, 4cm)
+    %                 |> terminate-path in
+    %             unite-path p1 p2
+    %         )
+    %     );
+    %     % \test-path(
+    %     %     XPath.(
+    %     %         let p1 = start-path (-2cm, 0cm)
+    %     %             |> bezier-to (-4cm, 2cm) (4cm, 2cm) (4cm, 0cm)
+    %     %             |> terminate-path in
+    %     %         let p2 = start-path (-2.4cm, -0.5cm)
+    %     %             |> line-to (-2.4cm, 2.5cm)
+    %     %             |> terminate-path in
+    %     %         let p3 = start-path (-1.5cm, 1cm)
+    %     %             |> bezier-to (-1cm, 4cm) (1cm, -1cm) (1.5cm, 2cm)
+    %     %             |> terminate-path in
+    %     %         unite-path (unite-path p1 p2) p3
+    %     %     )
+    %     % );
+    %     \test-path(
+    %         XPath.(
+    %             let p1 =
+    %                 start-path (0pt, 0pt)
+    %                 |> line-to (3cm, 3cm)
+    %                 %start-path (3cm, 3cm)
+    %                 |> bezier-to (6cm, 6cm) (3cm, 0cm) (9cm, 6cm)
+    %                 %|> bezier-to (10cm, 9cm) (3cm, 0cm) (5cm, -2cm)
+    %                 %|> close-with-bezier (4cm, -3cm) (1cm, -1cm)
+    %                 |> terminate-path
+    %             in
+    %             let p3 = start-path (3cm, 3cm)
+    %                 |> line-to (0cm, 0cm)
+    %                 |> line-to (9cm, 6cm)
+    %                 |> bezier-to (6cm, 6cm) (3cm, 0cm) (9cm, 6cm)
+    %                 |> terminate-path
+    %             in
+    %             p3
+    %             % let p2 = start-path (1cm, 2.5cm)
+    %             %     |> line-to (8cm, 2.5cm)
+    %             %     |> terminate-path in
+    %             % p2
+    %             %unite-path p1 p2
+    %         )
+    %     );
+    %     % \test-path(
+    %     %     XPath.(
+    %     %         start-path (5.3mm, 1mm)
+    %     %             |> bezier-to (5.3mm, 1mm) (-2mm, 4.7mm) (1.2mm, 13.2mm)
+    %     %             |> bezier-to (4.5mm, 21.6mm) (7.3mm, 3.6mm) (13.5mm, 11.1mm)
+    %     %             |> bezier-to (19.7mm, 18.7mm) (3.3mm, 15.6mm) (2.4mm, 10.6mm)
+    %     %             |> bezier-to (1.5mm, 5.6mm) (39mm, 23.2mm) (29.1mm, 25.1mm)
+    %     %             |> bezier-to (19.12mm, 26.9mm) (11.1mm, 25.8mm) (11.1mm, 25.8mm)
+    %     %             |> line-to (28.3mm, 4.1mm)
+    %     %             |> line-to (14.1mm, 4.8mm)
+    %     %             |> line-to (33.3mm, 32.1mm)
+    %     %             |> line-to (1.9mm, 7.8mm)
+    %     %             |> bezier-to (1.9mm, 7.8mm) (25.7mm, -7.7mm) (21.2mm, -6.7mm)
+    %     %             |> bezier-to (16.8mm, 21.3mm) (23.1mm, 21.7mm) (34.3mm, 21.9mm)
+    %     %             |> bezier-to (45.4mm, 22mm) (14.9mm, -2.2mm) (5.3mm, 1mm)
+    %     %             |> close-with-line
+    %     %     )
+    %     % );
+
+    % }
 >
