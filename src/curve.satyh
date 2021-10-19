@@ -288,7 +288,7 @@ end = struct
 
 
     let (ulim1, ulim2) = (0. -. eps, 1. +. eps)
-    let sortf = (fun (v1, u1) (v2, u2) -> ( u1 <=. u2))
+    let sortf = (fun (u1, v1) (u2, v2) -> (u1 <=. u2))
     let replacef = (fun (u, v) -> (v, u))
 
 
@@ -483,12 +483,11 @@ end = struct
 
 
     let get-intersects delta curve1 curve2 =
-        if is-line curve1 then
-            get-lineseg-intersects curve2 (as-edges curve1)
-                |> sort sortf |> List.map replacef
-        else if is-line curve2 then
+        if is-line curve2 then
             get-lineseg-intersects curve1 (as-edges curve2)
-                |> List.map (fun (v, u) -> (u, v))
+        else if is-line curve1 then
+            get-lineseg-intersects curve2 (as-edges curve1)
+                |> List.map replacef |> sort sortf
         else
             get-intersects-inner delta (0., 1., curve1) (0., 1., curve2)
             %let (clst1, clst2) = (reduce curve1, reduce curve2) in

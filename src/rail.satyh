@@ -8,6 +8,7 @@ type curve = XPathCurve.t
 
 % representation of connected list of curves
 module XPathRail : sig
+    val run-debug : unit -> unit
 
     type t
     type loc
@@ -228,7 +229,6 @@ end = struct
         )) ([], items) in
         List.append items res
 
-
     let get-cross-self delta (_, _, cs) =
         let (cse, max) = cs |> List.fold-right (fun c (res, max) -> (
             ((c, delta /' (XPathCurve.get-simple-norm c))::res, max + 1)
@@ -297,10 +297,10 @@ end = struct
         cs1 |> List.fold-lefti (fun i rs ci -> (
             cs2 |> List.fold-lefti (fun j rs cj -> (
                 XPathCurve.get-intersects delta ci cj
-                    |> List.fold-right (fun (u, v) (rs1, rs2) -> (
+                    |> List.fold-left (fun (rs1, rs2) (u, v) -> (
                         let p = XPathCurve.get-point-from-curves-and-pos ci cj (u, v) in
                         (
-                            List.append rs1 [(i, u, p)],
+                            migrate-locations rs1 [(i, u, p)],
                             rs2 |> migrate-locations [(j, v, p)]
                         )
                     )) rs
@@ -440,6 +440,37 @@ end = struct
                 XPathCurve.get-point u c
             ))
         )) |> List.concat
+
+
+    let run-debug () = ()
+        % let rail1 =
+        %     XPathCurve.from-controls ((4cm, -1cm), (4cm, 1cm), (2cm, 3cm), (2cm, 3cm))
+        %     |> from-curve
+        %     |> line-to (0cm, -1cm)
+        %     |> line-to (-2cm, 3cm)
+        %     |> line-to (-4cm, -1cm)
+        % in
+        % let rail2 = 
+        %     XPathCurve.from-controls ((-4cm, 0cm), (-4cm, 0cm), (-2cm, 2cm), (0cm, 2cm))
+        %     |> from-curve
+        %     |> bezier-to (2cm, 2cm) (4cm, 0cm) (4cm, 0cm)
+        % in
+        % let (ls2, ls1) = get-cross 0.001cm rail2 rail1 in
+        % let () = display-message `rail1` in
+        % let () = ls1 |> List.map (fun (i, u, p) -> (
+        %     `(` ^ (arabic i) ^ `, `# ^ (show-float u) ^ `, `# ^ (show-point p) ^ `) `#
+        % )) |> List.fold-left (^) ` ` |> display-message in
+        % let () = display-message `rail2` in
+        % let () = ls2 |> List.map (fun (i, u, p) -> (
+        %     `(` ^ (arabic i) ^ `, `# ^ (show-float u) ^ `, `# ^ (show-point p) ^ `) `#
+        % )) |> List.fold-left (^) ` ` |> display-message in
+        % let p = (0pt, 0pt) in
+        % migrate-locations
+        %     [(1, 0.3, p); (1, 0.7, p); (3, 0.5, p)]
+        %     [(1, 0.2, p); (1, 0.5, p); (1, 0.7, p); (1, 0.8, p); (2, 0.5, p); (3, 0.2, p); (3, 0.5, p); (3, 0.7, p)]
+        % |> List.fold-left (fun str (i, u, _) -> (
+        %     str ^ `(` ^ (arabic i) ^ `, `# ^ (show-float u) ^ `) `#
+        % )) ` ` |> display-message
 
 
 end

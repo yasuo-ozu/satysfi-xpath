@@ -135,7 +135,6 @@ end = struct
                   | PreRail(rail2) ->
                         let (lst, _) = XPathRail.get-cross delta rail rail2 in
                         XPathRail.migrate-locations lst acc
-                    % TODO: sprt
               )) []
               |> List.map (XPathRail.loc-to-point)
 

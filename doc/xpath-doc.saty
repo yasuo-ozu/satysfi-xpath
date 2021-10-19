@@ -25,6 +25,8 @@ let-inline ctx \test-path gs =
 in
 
 let () = XPathCurve.run-debug () in
+let () = XPathRail.run-debug () in
+let ctx = get-initial-context 16pt (command \math) in
 document (|
   title = {XPath パッケージ};
   author = {The XPath Contributors};
@@ -81,7 +83,7 @@ XPath.(
          >
          +section{組み込み型との変換}<
              +p {
-                 \code(`XPath.t`);, \code(`XPath.pre`);を\SATySFi;に組み込みの\code(`path`);, \code(`pre-path`);に変換するため、以下のコマンドが用意されています。
+                 \code(`XPath.t`);, \code(`XPath.pre`);を\SATySFi;に組み込みの\code(`path`);, \code(`pre-path`);に変換するため、以下のコマンドが用意されています。\footnote{これらのコマンドは通常使用する必要はありませんが、他の\code(`path`);を操作するライブラリ等と連携させる場合に使用できます。}
              }
              +code(```
 XPath.to-embedded-path : XPath.t -> path
@@ -111,38 +113,63 @@ XPath.get-intersections-with : length -> XPath.pre -> XPath.t -> point list
              +p {
                  例えば、以下のコード
              }
+             +code(```
+let pat = XPath.(
+    start-path (4cm, -1cm) |> line-to (2cm, 3cm)
+    |> line-to (0cm, -1cm) |> line-to (-2cm, 3cm)
+    |> line-to (-4cm, -1cm) |> terminate-path
+) in
+let ppat = XPath.(
+    start-path (-4cm, 0cm)
+    |> bezier-to (-4cm, 0cm) (-2cm, 2cm) (0cm, 2cm)
+    |> bezier-to (2cm, 2cm) (4cm, 0cm) (4cm, 0cm)
+) in
+let pts = XPath.get-intersections-with 0.001cm ppat pat in
+let labels = pts |> List.mapi (fun i p -> (
+    let () = show-point p |> display-message in
+    [
+        Gr.circle p 0.2cm |> fill (Color.yellow);
+        arabic i |> embed-string |> read-inline ctx |> draw-text p
+    ]
+)) |> List.concat in
+XPath.(
+    List.append [
+        pat |> stroke 1pt (Color.blue);
+        ppat |> terminate-path |> stroke 1pt (Color.black);
+    ] labels
+)
+             ```);
+             +p {
+                 は以下のように表示されます。このとき、図中の番号(すなわち\code(`get-intersections-with`);が交点を出力する順番)は与えられた\code(`XPath.pre`);(図の曲線右向き)と同じ順番で表示されていることを確認してください。
+             }
              +p {
                  \test-path(
                      let pat = XPath.(
-                         start-path (0pt, 0pt)
-                         |> line-to (2cm, 2cm)
-                         |> close-with-bezier (2cm, 0cm) (2cm, 0cm)
+                         start-path (4cm, -1cm) |> line-to (2cm, 3cm)
+                         |> line-to (0cm, -1cm) |> line-to (-2cm, 3cm)
+                         |> line-to (-4cm, -1cm) |> terminate-path
                      ) in
                      let ppat = XPath.(
-                         start-path (4cm, -2cm)
-                         |> line-to (0cm, 2cm)
+                         start-path (-4cm, 0cm)
+                         |> bezier-to (-4cm, 0cm) (-2cm, 2cm) (0cm, 2cm)
+                         |> bezier-to (2cm, 2cm) (4cm, 0cm) (4cm, 0cm)
                      ) in
-                     let pts = XPath.get-intersections-with 0.1pt ppat pat in
-                     let () = pts |> List.fold-left (fun res (x, y) -> (
-                         let xs = show-float (x /' 1cm) in
-                         let ys = show-float (y /' 1cm) in
-                         res ^ `(` ^ xs ^ `, ` ^ ys ^ `) `
-                     )) ` ` |> display-message in
-                     let (p1, p2) = match pts with
-                         | p1::p2::_ -> (p1, p2)
-                         | _ -> ((0pt, 0pt), (0pt, 0pt))
-                     in
-                     XPath.(
+                     let pts = XPath.get-intersections-with 0.001cm ppat pat in
+                     let labels = pts |> List.mapi (fun i p -> (
+                         let () = show-point p |> display-message in
                          [
-                             pat |> stroke 5pt (Color.blue);
-                             ppat |> terminate-path |> stroke 1pt (Color.black);
-                             start-path (4cm, -2cm) |> line-to p1 |> terminate-path |> stroke 2pt (Color.red);
-                             start-path p2 |> line-to (0cm, 2cm) |> terminate-path |> stroke 2pt (Color.blue);
+                             Gr.circle p 0.2cm |> fill (Color.yellow);
+                             arabic i |> embed-string |> read-inline ctx |> draw-text p
                          ]
+                     )) |> List.concat in
+                     XPath.(
+                         List.append [
+                             pat |> stroke 1pt (Color.blue);
+                             ppat |> terminate-path |> stroke 1pt (Color.black);
+                         ] labels
                      )
                  );
              }
-             
          >
      >
      +chapter{今後追加する機能}<>

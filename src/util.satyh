@@ -23,6 +23,8 @@ module XPathUtil : sig
     val angle-to-point : length -> float -> point
     val show-point : point -> string
 
+    val show-bool : bool -> string
+
     val float-neg : float -> float
     val float-abs : float -> float
     val float-min : float -> float -> float
@@ -225,6 +227,9 @@ end = struct
 
     let point-normalize l (x, y) = let r = l /' (point-norm (x, y)) in point-mul r (x, y)
     let show-point (x, y) = `(` ^ (show-length x) ^ `, `# ^ (show-length y) ^ `)`
+
+
+    let show-bool b = if b then `true` else `false`
 
 
     let intersect-lines (p1, p2) (p3, p4) =
