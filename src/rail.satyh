@@ -22,8 +22,8 @@ module XPathRail : sig
     val faced-with : point -> t -> bool
     val is-closed : t -> bool
     val append-or : t -> t -> t option
-    val split-at : int * float -> t -> t * t
-    val split-span : int * float -> int * float -> t -> t
+    val split-at : loc -> t -> t * t
+    val split-span : loc -> loc -> t -> t
     val inverse : t -> t
     val take-from-point : point -> t -> t option
     val into-list : t -> point * (((point * point) option * point) list)
@@ -45,7 +45,7 @@ module XPathRail : sig
     val compare-loc : loc -> loc -> int
     val loc-to-len : length -> loc -> t -> length
     % TODO:
-    % val len-to-pos : length -> length -> t -> pos
+    val len-to-loc : length -> length -> t -> loc
 
     val get-cross-self : length -> t -> loc list
     val get-cross-points-self : length -> t -> point list
@@ -162,7 +162,7 @@ end = struct
             None
 
 
-    let split-at (i, u) (pa1, pe2, cs) =
+    let split-at (i, u, _) (pa1, pe2, cs) =
         let-rec impl i cs =
             match cs with
             | c::rcs -> (
@@ -182,7 +182,7 @@ end = struct
 
 
     % i should be less than j or i == j && u < v
-    let split-span (i, u) (j, v) (pa, pe, cs) =
+    let split-span (i, u, _) (j, v, _) (pa, pe, cs) =
         let d = j - i in
         let-rec impl i cs =
             match cs with
@@ -358,12 +358,12 @@ end = struct
                 (j, v, pe, ret)
             else
                 % Get a rail from (i, u, pa) to (j, v, pe)
-                let res = split-span (i, u) (j, v) rail
+                let res = split-span (i, u, pa) (j, v, pe) rail
                     |> set-edges (pa, pe)
                 in
                 (j, v, pe, List.append ret [res])
         )) (0, 0., pa, []) in
-        let (_, res) = split-at (i, u) rail in
+        let (_, res) = split-at (i, u, pa) rail in
         let res =  set-edges (pa, pe) res in
         List.append ret [res]
 
@@ -475,6 +475,22 @@ end = struct
                 XPathCurve.get-point u c
             ))
         )) |> List.concat
+
+
+    let len-to-loc delta len (_, _, cs) =
+        let-rec impl i cs len =
+            match cs with
+            | c::cs ->
+                  let (len, u) = XPathCurve.len-to-pos delta len c in
+                  if len >' 0pt then
+                      impl (i + 1) cs len
+                  else
+                      let p = XPathCurve.get-point u c in
+                      (i, u, p)
+            | [] ->
+                  (-1, 0. /. 0., point-nil)
+        in
+        impl 0 cs len
 
 
     let run-debug () = ()

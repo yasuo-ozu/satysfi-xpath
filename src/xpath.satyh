@@ -65,8 +65,8 @@ module XPath : sig
     val get-projection-length : length -> point -> pre -> length
     val get-rough-length : length -> pre -> length
     % TODO:
-    % val split : length -> length -> pre -> pre
-    % val get-point-of-len : length -> length -> pre -> point
+    val split : length -> length -> pre -> pre * pre
+    val get-point-of-len : length -> length -> pre -> point
 
 end = struct
 
@@ -223,4 +223,22 @@ end = struct
                   PrePoint((x *' a +' y *' b, x *' c +' y *' d))
             | PreRail(r) -> PreRail(XPathRail.linear-transform (a, b, c, d) r)
         ))
+
+
+    let get-point-of-len delta len pp =
+        match pp with
+        | PrePoint(_) -> point-nil
+        | PreRail(r) ->
+              XPathRail.len-to-loc delta len r
+              |> XPathRail.loc-to-point
+
+
+    let split delta len pp =
+        match pp with
+        | PrePoint(p) -> (PrePoint(p), PrePoint(p))
+        | PreRail(r) ->
+              let l = XPathRail.len-to-loc delta len r in
+              let (r1, r2) = XPathRail.split-at l r in
+              (PreRail(r1), PreRail(r2))
+
 end
