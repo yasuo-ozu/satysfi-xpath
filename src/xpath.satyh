@@ -61,6 +61,12 @@ module XPath : sig
 
     val get-intersections : length -> t -> point list
     val get-intersections-with : length -> pre -> t -> point list
+    val get-projection : length -> point -> pre -> point
+    val get-projection-length : length -> point -> pre -> length
+    val get-rough-length : length -> pre -> length
+    % TODO:
+    % val split : length -> length -> pre -> pre
+    % val get-point-of-len : length -> length -> pre -> point
 
 end = struct
 
@@ -72,6 +78,7 @@ end = struct
         match pp with
         | PrePoint(p0) -> start-path p0
         | PreRail(r) ->
+              % TODO: delete unexpected path end of closed xpath
               let (p0, lst) = XPathRail.into-list r in
               lst |> List.fold-left (fun ret (item, p3) -> (
                   match item with
@@ -137,6 +144,29 @@ end = struct
                         XPathRail.migrate-locations lst acc
               )) []
               |> List.map (XPathRail.loc-to-point)
+
+
+    let get-projection delta p pp =
+        match pp with
+        | PrePoint(p0) -> p0
+        | PreRail(r) ->
+            XPathRail.get-projection-from-point delta p r
+            |> XPathRail.loc-to-point
+
+
+    let get-projection-length delta p pp =
+        match pp with
+        | PrePoint(_) -> 0pt
+        | PreRail(r) ->
+          let l = XPathRail.get-projection-from-point delta p r in
+          XPathRail.loc-to-len delta l r
+
+
+    let get-rough-length delta pp =
+        match pp with
+        | PrePoint(_) -> 0pt
+        | PreRail(r) ->
+            XPathRail.get-rough-length delta r
 
 
     % SATySFi compatible APIs

@@ -25,6 +25,8 @@ module XPathUtil : sig
 
     val show-bool : bool -> string
 
+    val float-inf : float
+    val float-nan : float
     val float-neg : float -> float
     val float-abs : float -> float
     val float-min : float -> float -> float
@@ -52,6 +54,7 @@ module XPathUtil : sig
     val length-min-list : length -> length list -> length
     val length-max-list : length -> length list -> length
     val length-zero : length -> bool
+    val length-nil : length
     val (=') : length -> length -> bool
     val (!=') : length -> length -> bool
     val (>=') : length -> length -> bool
@@ -126,6 +129,8 @@ end = struct
 
 
     let pi = 3.1415926536
+    let float-inf = 1. /. 0.
+    let float-nan = 0. /. 0.
     let float-neg a = (0. -. 1.) *. a
     let float-zero-or-nan a = not (1pt *' a <' 1pt *' (float-neg a) || 1pt *' a >' 1pt *' (float-neg a))
     let float-zero a = float-zero-or-nan a && not float-zero-or-nan (a +. 1.)
@@ -167,6 +172,7 @@ end = struct
     let length-neg l = l *' (float-neg 1.)
     let length-min l1 l2 = if l1 <' l2 then l1 else l2
     let length-max l1 l2 = if l2 <' l1 then l1 else l2
+    let length-nil = 1pt *' (0. /. 0.)
     let length-min-list l0 llst =
         List.fold-left length-min l0 llst
     let length-max-list l0 llst =

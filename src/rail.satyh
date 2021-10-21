@@ -37,11 +37,15 @@ module XPathRail : sig
     val linear-transform : float * float * float * float -> t -> t
     val get-rough-length : length -> t -> length
     val get-rough-loc-from-length : length -> length -> t -> loc option
+    val get-projection-from-point : length -> point -> t -> loc
 
     val loc-to-point : loc -> point
     val loc-to-pos : length -> t -> loc -> float
     val pos-to-loc : length -> t -> float -> loc
     val compare-loc : loc -> loc -> int
+    val loc-to-len : length -> loc -> t -> length
+    % TODO:
+    % val len-to-pos : length -> length -> t -> pos
 
     val get-cross-self : length -> t -> loc list
     val get-cross-points-self : length -> t -> point list
@@ -121,6 +125,21 @@ end = struct
               let (_, p1, p2, p3) = XPathCurve.as-controls c in
               let cs = impl (XPathCurve.from-controls (pa, p1, p2, p3)) cs in
               (pa, pe, cs)
+
+
+    let get-projection-from-point delta p (_, _, cs) =
+        let (_, i, u, p) =
+            cs |> List.fold-lefti (fun j (len, i, u, p0) c -> (
+                let v = XPathCurve.get-projection-from-point delta p c in
+                let p1 = XPathCurve.get-point v c in
+                let plen = p1 -.. p |> point-norm in
+                if plen <' len then
+                    (plen, j, v, p1)
+                else
+                    (len, i, u, p0)
+            )) (length-nil, -1, float-nan, point-nil)
+        in
+        (i, u, p)
         
 
     let is-closed rail =
@@ -406,6 +425,22 @@ end = struct
         | Some(l) -> l
         | None -> display-message `ERROR in pos-to-loc` before
               (0, 0., point-nil)
+
+
+    let loc-to-len delta (i, u, _) (_, _, cs) =
+        let-rec impl i cs =
+            match cs with
+            | [] -> 1pt *' (0. /. 0.)
+            | c::cs -> if i > 0 then (
+                let l = XPathCurve.get-rough-length delta c in
+                l +' impl (i - 1) cs
+            ) else (
+                let (cc, _) = XPathCurve.split-at u c in
+                let l = XPathCurve.get-rough-length delta cc in
+                l
+            )
+        in
+        impl i cs
 
 
     let compare-loc (i, u, _) (j, v, _) =

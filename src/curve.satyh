@@ -29,10 +29,11 @@ module XPathCurve : sig
     val get-rough-length : length -> t -> length
     val get-rough-pos-from-length : length -> length -> t -> length * (float option)
     val get-point : float -> t -> point
-    val pos-to-point : t -> float -> point
+    val get-projection-from-point : length -> point -> t -> float
     val split-at : float -> t -> t * t
     val split-at-list : t -> float list -> (float * float * t) list
     val split-span : float -> float -> t -> t
+    val len-to-pos : length -> length -> t -> float
 
     val get-derivative : float -> t -> point
 
@@ -80,9 +81,6 @@ end = struct
         let v = 1. -. u in
         (p1 *.. (cube v)) +.. (p2 *.. (u *. v *. v *. 3.))
             +.. (p3 *.. (u *. u *. v *. 3.)) +.. (p4 *.. (cube u))
-
-
-    let pos-to-point curve u = get-point u curve
 
 
     let get-simple-norm curve =
@@ -172,6 +170,29 @@ end = struct
             )
         else
             impl l 0. 1. curve
+
+
+    let get-projection-from-point delta p curve =
+        let-rec impl a b = 
+            let c = split-span a b curve in
+            let l = get-simple-norm c in
+            if l <' delta then
+                let (p1, _) = as-edges c in
+                (a, point-norm (p1 -.. p))
+            else
+                let m = (a +. b) /. 2. in
+                let (a1, d1) = impl a m in
+                let (a2, d2) = impl m b in
+                if d1 <' d2 then
+                    (a1, d1)
+                else
+                    (a2, d2)
+        in
+        let (_, p2) = as-edges curve in
+        let (a1, d1) = impl 0. 1. in
+        let (a2, d2) = (1., point-norm (p2 -.. p)) in
+        if d1 <' d2 then a1
+        else a2
 
 
     let get-extrema curve =
@@ -506,6 +527,26 @@ end = struct
                 (pu +.. pv) *.. 0.5
             ))
         
+
+    let len-to-pos delta len curve =
+        let-rec impl len a b =
+            let curve = split-span a b curve in
+            let l = get-simple-norm curve in
+            let c = (a +. b) /. 2. in
+            if l <' delta then
+                if len <' l then
+                    (0pt, Some(c))
+                else
+                    (len -' l, None)
+            else
+                match impl len a c with
+                | (len, None) -> impl len c b
+                | other -> other
+        in
+        match impl len 0. 1. with
+        | (_, Some(a)) -> a
+        | _ -> 0. /. 0.
+
 
 %    let get-self-intersects delta curve =
 %        if is-line curve then []
