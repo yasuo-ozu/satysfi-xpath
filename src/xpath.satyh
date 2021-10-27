@@ -64,7 +64,6 @@ module XPath : sig
     val get-projection : length -> point -> pre -> point
     val get-projection-length : length -> point -> pre -> length
     val get-rough-length : length -> pre -> length
-    % TODO:
     val split : length -> length -> pre -> pre * pre
     val get-point-of-len : length -> length -> pre -> point
 
@@ -78,7 +77,6 @@ end = struct
         match pp with
         | PrePoint(p0) -> start-path p0
         | PreRail(r) ->
-              % TODO: delete unexpected path end of closed xpath
               let (p0, lst) = XPathRail.into-list r in
               lst |> List.fold-left (fun ret (item, p3) -> (
                   match item with
@@ -88,12 +86,35 @@ end = struct
 
 
     let to-embedded-path pat =
+        let impl-outer pp =
+            match pp with
+            | PrePoint(p0) -> start-path p0 |> terminate-path
+            | PreRail(r) ->
+                  let (p0, lst) = XPathRail.into-list r in
+                  let-rec impl lst acc =
+                      match lst with
+                      | [] -> acc |> terminate-path % ERROR
+                      | (None, p3)::[] -> 
+                            if p0 =.. p3 then
+                                acc |> close-with-line
+                            else
+                                acc |> line-to p3 |> terminate-path
+                      | (Some((p1, p2)), p3)::[] ->
+                            if p0 =.. p3 then
+                                acc |> close-with-bezier p1 p2
+                            else
+                                acc |> bezier-to p1 p2 p3 |> terminate-path
+                      | (None, p3)::lst -> acc |> line-to p3 |> impl lst
+                      | (Some((p1, p2)), p3)::lst -> acc |> bezier-to p1 p2 p3 |> impl lst
+                  in
+                  start-path p0 |> impl lst
+        in
         match pat with
         | [] -> display-message `ERROR in to-embedded-path` before
               start-path (0pt, 0pt) |> terminate-path
         | pp0::pps -> pps |> List.fold-left (fun ret pp -> (
-              to-embedded-prepath pp |> terminate-path |> unite-path ret
-        )) (to-embedded-prepath pp0 |> terminate-path)
+              impl-outer pp |> unite-path ret
+        )) (impl-outer pp0)
 
 
     %let into-graph pat =
@@ -159,6 +180,7 @@ end = struct
         | PrePoint(_) -> 0pt
         | PreRail(r) ->
           let l = XPathRail.get-projection-from-point delta p r in
+          % TODO: lのuがnanになる
           XPathRail.loc-to-len delta l r
 
 

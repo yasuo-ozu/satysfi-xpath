@@ -137,7 +137,7 @@ end = struct
                     (plen, j, v, p1)
                 else
                     (len, i, u, p0)
-            )) (length-nil, -1, float-nan, point-nil)
+            )) (1pt *' (1. /. 0.), -1, float-nan, point-nil)
         in
         (i, u, p)
         
@@ -435,6 +435,7 @@ end = struct
                 let l = XPathCurve.get-rough-length delta c in
                 l +' impl (i - 1) cs
             ) else (
+                let () = display-float `flo` u in
                 let (cc, _) = XPathCurve.split-at u c in
                 let l = XPathCurve.get-rough-length delta cc in
                 l

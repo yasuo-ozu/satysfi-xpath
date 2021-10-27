@@ -107,8 +107,8 @@ XPath.get-intersections : length -> XPath.t -> point list
 XPath.get-intersections-with : length -> XPath.pre -> XPath.t -> point list
              ```);
              +listing{
-                 * \code(`get-intersections eps pat`);${\cdots}与えられたパス\code(`pat`);の内部の交点(\code(`point`);型)のリストを得ます。\code(`eps`);は精度です。
-                 * \code(`get-intersections-with eps ppat pat `);${\cdots}与えられた未完パス\code(`ppat`);がパス\code(`pat`);と交わる点のリストを得ます。得られる点列は\code(`ppat`);上で順番になっています。
+                 * \code(`get-intersections delta pat`);${\cdots}与えられたパス\code(`pat`);の内部の交点(\code(`point`);型)のリストを得ます。\code(`delta`);は精度です。
+                 * \code(`get-intersections-with delta ppat pat `);${\cdots}与えられた未完パス\code(`ppat`);がパス\code(`pat`);と交わる点のリストを得ます。得られる点列は\code(`ppat`);上で順番になっています。
              }
              +p {
                  例えば、以下のコード
@@ -170,6 +170,133 @@ XPath.(
                      )
                  );
              }
+             +p {
+                 また、\code(`get-intersections`);の例を示します。
+             }
+             +code(```
+ let pat = XPath.(
+     start-path (4cm, 0pt) |> line-to (-3.2cm, 1.8cm)
+     |> line-to (1.2cm, -4cm) |> line-to (1.2cm, 4cm)
+     |> line-to (-3.2cm, -1.8cm) |> close-with-line
+ ) in
+ let pts = XPath.get-intersections 0.001cm pat in
+ let labels = pts |> List.mapi (fun i p -> (
+     let () = show-point p |> display-message in
+     [
+         Gr.circle p 0.2cm |> fill (Color.yellow);
+         arabic i |> embed-string |> read-inline ctx |> draw-text p
+     ]
+ )) |> List.concat in
+ XPath.(
+     List.append [
+         pat |> stroke 1pt (Color.blue);
+     ] labels
+ )
+             ```);
+             +p {
+                 \test-path(
+                     let pat = XPath.(
+                         start-path (4cm, 0pt) |> line-to (-3.2cm, 1.8cm)
+                         |> line-to (1.2cm, -4cm) |> line-to (1.2cm, 4cm)
+                         |> line-to (-3.2cm, -1.8cm) |> close-with-line
+                     ) in
+                     let pts = XPath.get-intersections 0.001cm pat in
+                     let labels = pts |> List.mapi (fun i p -> (
+                         let () = show-point p |> display-message in
+                         [
+                             Gr.circle p 0.2cm |> fill (Color.yellow);
+                             arabic i |> embed-string |> read-inline ctx |> draw-text p
+                         ]
+                     )) |> List.concat in
+                     XPath.(
+                         List.append [
+                             pat |> stroke 1pt (Color.blue);
+                         ] labels
+                     )
+                 );
+
+             }
+
+         >
+         +section{長さに関するコマンド} <
+             +p {
+                 ここでは、曲線の長さを取得したり、点の曲線上における位置を取得したり、長さを用いて曲線を操作するコマンドを紹介します。
+             }
+             +code(```
+XPath.get-rough-length : length -> XPath.pre -> length
+XPath.get-point-of-len : length -> length -> pre -> point
+XPath.get-projection : length -> point -> pre -> point
+XPath.get-projection-length : length -> point -> pre -> length
+XPath.split : length -> length -> pre -> pre * pre
+             ```);
+             +listing{
+                 * \code(`get-rough-length delta ppat`);${\cdots}与えられた未完パス\code(`ppat`);の長さを得ます。これは厳密なアルゴリズムではなく、精度を\code(`delta`);で指定します。
+                 * \code(`get-point-of-len delta len ppat`);${\cdots}与えられた未完パス\code(`ppat`);上で始点から長さ\code(`len`);の地点を取得します。
+                 * \code(`get-projection delta p ppat`);${\cdots}与えられた未完パス\code(`ppat`);上で与えられた点\code(`p`);に最も近い点を取得します。
+                 * \code(`get-projection-length delta p ppat`);${\cdots}与えられた未完パス\code(`ppat`);上で与えられた点\code(`p`);に最も近い点の位置を表す長さを取得します。
+                 * \code(`split delta len ppat`);${\cdots}与えられた未完パス\code(`ppat`);を長さ\code(`len`);の位置で分割します。
+             }
+             +p {
+                 例えば、
+             }
+             +code(```
+ let ppat = XPath.(
+     start-path (-4cm, 0pt)
+     |> bezier-to (-4cm, 2.8cm) (-2.8cm, 4cm) (0pt, 4cm)
+     |> bezier-to (2.8cm, 4cm) (4cm, 2.8cm) (4cm, 0pt)
+     |> bezier-to (4cm, -2.8cm) (2.8cm, -4cm) (0pt, -4cm)
+     |> bezier-to (-2.8cm, -4cm) (-4cm, -2.8cm) (-4cm, 0pt)
+ ) in
+ let len = XPath.get-rough-length 0.001cm ppat in
+ let n = 8 in
+ range-span 0. 1. n |> List.mapi (fun i (a, b) -> (
+    let (_, ppat) = ppat |> XPath.split 0.01cm (len *' a) in
+    let (ppat, _) = ppat |> XPath.split 0.01cm (len *' (b -. a)) in
+    let clr = if i mod 2 == 0 then Color.red else Color.blue in
+    ppat |> XPath.terminate-path |> XPath.stroke 5pt clr
+ ))
+             ```);
+             +p {
+                 は
+                 \test-path(
+                     let ppat = XPath.(
+                         start-path (-4cm, 0pt)
+                         |> bezier-to (-4cm, 2.8cm) (-2.8cm, 4cm) (0pt, 4cm)
+                         |> bezier-to (2.8cm, 4cm) (4cm, 2.8cm) (4cm, 0pt)
+                         |> bezier-to (4cm, -2.8cm) (2.8cm, -4cm) (0pt, -4cm)
+                         |> bezier-to (-2.8cm, -4cm) (-4cm, -2.8cm) (-4cm, 0pt)
+                     ) in
+                     let len = XPath.get-rough-length 0.001cm ppat in
+                     let n = 8 in
+                     range-span 0. 1. n |> List.mapi (fun i (a, b) -> (
+                        let (_, ppat) = ppat |> XPath.split 0.01cm (len *' a) in
+                        let (ppat, _) = ppat |> XPath.split 0.01cm (len *' (b -. a)) in
+                        let clr = if i mod 2 == 0 then Color.red else Color.blue in
+                        ppat |> XPath.terminate-path |> XPath.stroke 5pt clr
+                     ))
+                 );
+                 と表示されます。また、
+
+                 \test-path(
+                     let ppat = XPath.(
+                         start-path (0pt, 0pt)
+                         |> bezier-to (1cm, -2cm) (1cm, 3cm) (2cm, 2cm)
+                         |> bezier-to (4cm, 4cm) (5cm, -2cm) (6cm, 0cm)
+                     ) in
+                     let p = (3cm, 0cm) in
+                     let len = XPath.get-projection-length 0.1cm p ppat in
+                     let proj = XPath.get-point-of-len 0.1cm len ppat in
+                     let (ppat1, ppat2) = XPath.split 0.1cm len ppat in
+                     XPath.([
+                         ppat1 |> terminate-path |> stroke 5pt Color.blue;
+                         ppat2 |> terminate-path |> stroke 5pt Color.red;
+                         start-path p |> line-to proj |> terminate-path |> stroke 1pt Color.black
+                     ])
+                 );
+             }
+
+
+
          >
      >
      +chapter{今後追加する機能}<>
