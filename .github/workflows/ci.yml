@@ -21,6 +21,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
+
       - name: Determine the default OPAM Repo
         id: determine-default-opam-repo
         # See https://docs.github.com/en/actions/reference/context-and-expression-syntax-for-github-actions#runner-context
@@ -32,7 +33,7 @@ jobs:
             DEFAULT_OPAM_REPO="https://github.com/ocaml/opam-repository.git"
           fi
           echo "::set-output name=opam-repo-default::$(echo "$DEFAULT_OPAM_REPO")"
-        
+
       - name: Setup OCaml ${{ matrix.ocaml-version }}
         uses: avsm/setup-ocaml@v2
         with:
@@ -55,4 +56,3 @@ jobs:
         run: |
           opam lint
           opam install . --with-doc --verbose
-
