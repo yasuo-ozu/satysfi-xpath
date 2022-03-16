@@ -1,25 +1,26 @@
 name: CI
 
 on:
-  [pull_request, push]
+  - pull_request
+  - push
 
 jobs:
   build:
     name: Build
     strategy:
-    runs-on: 'ubuntu-latest'
-
+      matrix:
+        os:
+          - 'ubuntu-latest'
+          - 'macos-latest'
+        ocaml-version:
+          - 4.11.2
+          - 4.12.1
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Cache dist fonts
-        uses: actions/cache@v2
-        env:
-          cache-name: cache-dist-fonts
-        with:
-          path: lib-satysfi/dist/fonts
-          key: ${{ env.cache-name }}-${{ hashFiles('download-fonts.sh') }}
 
       - name: Determine the default OPAM Repo
         id: determine-default-opam-repo
@@ -33,33 +34,25 @@ jobs:
           fi
           echo "::set-output name=opam-repo-default::$(echo "$DEFAULT_OPAM_REPO")"
 
-      - name: Setup OCaml 4.12.1 and pin satysfi
-        uses: ocaml/setup-ocaml@v2
+      - name: Setup OCaml ${{ matrix.ocaml-version }}
+        uses: avsm/setup-ocaml@v2
         with:
-          ocaml-compiler: 4.12.1
-          dune-cache: true
+          ocaml-compiler: ${{ matrix.ocaml-version }}
+          dune-cache: ${{ matrix.os != 'macos-latest' }}
+          
           opam-depext: true
           opam-pin: true
-
           opam-repositories: |
             satysfi-external: https://github.com/gfngfn/satysfi-external-repo.git
+            satyrographos: https://github.com/na4zagin3/satyrographos-repo.git
             default: ${{ steps.determine-default-opam-repo.outputs.opam-repo-default }}
 
-      - name: Install SATySFi dependencies
+      - name: Install SATySFi and Satyrographos
         run: |
-          opam install . --deps-only --with-doc --verbose
+          opam install satysfi --yes
+          opam install satyrographos --yes
 
-      - name: Build SATySFi
-        run: opam exec -- make all
-
-      - name: Install SATySFi
+      - name: Install
         run: |
-          opam install -y .
-          if [ -z "$(ls lib-satysfi/dist/fonts)" ]; then
-            ./download-fonts.sh
-          fi
-          ./install-libs.sh ~/.satysfi
-
-      - name: Build demo docs
-        run: |
-          opam exec -- satysfi doc/xpath-doc.saty
+          opam lint
+          opam install . --with-doc --verbose
