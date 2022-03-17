@@ -6,7 +6,11 @@
   (version "0.1.0")
   (sources
     (
+<<<<<<< HEAD
      (package "xpath.satyg" "./src/xpath.satyh")
+=======
+     (package "xpath.satyh" "./src/xpath.satyg")
+>>>>>>> f481ae6 (Update satyristes)
     )
   )
   (opam "satysfi-xpath.opam")
