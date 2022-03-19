@@ -276,7 +276,24 @@ XPath.split : length -> length -> pre -> pre * pre
                      ))
                  );
                  と表示されます。また、
-
+             }
+             +code(```
+let ppat = XPath.(
+    start-path (0pt, 0pt)
+    |> bezier-to (1cm, -2cm) (1cm, 3cm) (2cm, 2cm)
+    |> bezier-to (4cm, 4cm) (5cm, -2cm) (6cm, 0cm)
+) in
+let p = (3cm, 0cm) in
+let len = XPath.get-projection-length 0.1cm p ppat in
+let proj = XPath.get-point-of-len 0.1cm len ppat in
+let (ppat1, ppat2) = XPath.split 0.1cm len ppat in
+XPath.([
+    ppat1 |> terminate-path |> stroke 5pt Color.blue;
+    ppat2 |> terminate-path |> stroke 5pt Color.red;
+    start-path p |> line-to proj |> terminate-path |> stroke 1pt Color.black
+])
+             ```);
+             +p{
                  \test-path(
                      let ppat = XPath.(
                          start-path (0pt, 0pt)
@@ -298,6 +315,54 @@ XPath.split : length -> length -> pre -> pre * pre
 
 
          >
+        +section{パスの変形}<
+            +p {
+                ここでは、パスの変形に用いるコマンドを説明します。
+            }
+             +code(```
+XPath.offset : length -> XPath.pre -> XPath.pre
+XPath.offset-path : length -> XPath.t -> XPath.t
+             ```);
+             +p {
+                 \code(`XPath.offset l ppat`);及び\code(`XPath.offset-path l pat`);はそれぞれ未完パス及びパスを与えられた長さ\code(`l`);分ずらします。長さとして負の値を指定すると、逆方向にずらします。例えば、
+             }
+             +code(```
+let ppat = XPath.(
+    start-path (0cm, 0cm)
+    |> bezier-to (0cm, 2cm) (3cm, 2cm) (3cm, 0cm)
+    |> bezier-to (3cm, -2cm) (6cm, -2cm) (6cm, 0cm)
+) in
+[
+    (ppat, Color.black);
+    (ppat |> XPath.offset 1cm, Color.blue);
+    (ppat |> XPath.offset -1cm, Color.red);
+] |> List.map (fun (pp, clr) -> XPath.(
+    pp |> terminate-path |> stroke 5pt clr
+))
+            ```);
+            +p {
+                 を表示すると
+            }
+             +p {
+                 \test-path(
+                     let ppat = XPath.(
+                         start-path (0cm, 0cm)
+                            |> bezier-to (0cm, 2cm) (3cm, 2cm) (3cm, 0cm)
+                            |> bezier-to (3cm, -2cm) (6cm, -2cm) (6cm, 0cm)
+                     ) in
+                     [
+                         (ppat, Color.black);
+                         (ppat |> XPath.offset 1cm, Color.blue);
+                         (ppat |> XPath.offset -1cm, Color.red);
+                     ] |> List.map (fun (pp, clr) -> XPath.(
+                         pp |> terminate-path |> stroke 5pt clr
+                     ))
+                 );
+
+             }
+
+
+        >
      >
      +chapter{今後追加する機能}<>
      +chapter{内部実装}<>

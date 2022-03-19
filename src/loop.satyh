@@ -1,0 +1,179 @@
+@require: list
+@import: util
+@import: rail
+
+open XPathUtil
+
+type rail = XPathRail.t
+
+% representation of looped rail which has no self-intersects
+module XPathLoop : sig
+
+    type t
+    val from-rail : length -> rail -> t list
+    val is-counter-clockwise : t -> bool
+    %val is-contained-in : t -> t -> bool
+
+end = struct
+    type t = rail
+
+    let from-rail delta r =
+        let ls = r |> XPathRail.get-cross-self delta in
+
+        % an item is a tuple of index and rail-part. the index is used to detect sibling rail-part.
+        let items =
+            XPathRail.split-at-locations delta ls r
+                |> List.mapi (fun i r -> (i, r))
+        in
+        let max = List.length items - 1 in
+
+        % main function to find loops from items until items becomes vacant.
+        let-rec impl items =
+            match items with
+
+            % no more loops found in items
+            | [] -> []
+
+            % find new loop begins with r
+            | (i, r) :: items -> ( 
+
+                  % find loop begins with pa and ends at pe in items.
+                  % omit the rail-part indexed i because it is trivial trailing rail-part.
+                  let-rec impl-sub i pa pe items =
+
+                      % find trailing rail-part
+                      let-rec impl-sub-sub items =
+                          match items with
+
+                          % pa is one of the self-intersects of the given rail, so at least one rail-part
+                          % should be found here.
+                          | [] -> display-message `ERROR in from-rail` before
+                                (0, XPathRail.nil, point-nil, [])
+
+                          | (j, r) :: items ->
+                              let (qa, qe) = XPathRail.as-edges r in
+
+                              % it is correct trailing rail-part
+                              if i <> j && pa =.. qa then
+                                  (j, r, qe, items)
+                              else
+                                  % find the rail-art from remaining items
+                                  let (retj, retr, retp, items) = impl-sub-sub items in
+                                  (retj, retr, retp, (j, r)::items)
+                      in
+                      let (j, r, qe, items) = impl-sub-sub items in
+                      if pe =.. qe then
+                          ([r], items)
+                      else
+                          % omit trivial trailing rail-part
+                          let j = if j == max then 0 else j + 1 in
+                          let (ret, items) = impl-sub j qe pe items in
+                          (r :: ret, items)
+                  in
+                  let (pa, pe) = XPathRail.as-edges r in
+                  let i = if i == max then 0 else i + 1 in
+                  let (ret, items) = impl-sub i pe pa items in
+                  (r::ret)::(impl items)
+            )
+        in
+
+
+        impl items |> List.map (fun rs -> (
+
+            % split the loop where it self-intersects
+            let-rec impl-split-rs-sub rs1 rs2 =
+                match rs2 with
+                | [] -> [rs1]
+                | r::rs2m ->
+                      let (pa, pe) = XPathRail.as-edges r in
+                      let rs = List.append rs2 rs1 in
+                      let (ret, acc) = rs |> List.fold-left (fun (ret, acc) r -> (
+                          let (qa, qe) = XPathRail.as-edges r in
+                          let acc = List.append acc [r] in
+                          if pa =.. qe then
+                              (acc::ret, [])
+                          else
+                              (ret, acc)
+                      )) ([], []) in
+
+                      match ret with
+
+                      % cannot split rail-part begins with r
+                      | [] -> impl-split-rs-sub (List.append rs1 [r]) rs2m
+
+                      % find loop from r; run impl-split-rs-sub recursively into them
+                      | _ -> 
+                          let ret = match acc with
+                             | [] -> ret
+                             | acc -> acc::ret
+                          in
+                          ret |> List.map (fun rs -> (
+                              impl-split-rs-sub rs []
+                          )) |> List.concat
+            in
+
+            impl-split-rs-sub rs [] |> List.map (fun rs -> (
+                match rs with
+                | [] -> display-message `ERROR in from-rail` before XPathRail.nil
+                | r::rs -> rs |> List.fold-left (fun acc r -> (
+                      match (XPathRail.append-or acc r) with
+                      | None -> display-message `ERROR in from-rail` before XPathRail.nil
+                      | Some(r) -> r
+                )) r
+            ))
+        )) |> List.concat
+
+
+    let is-counter-clockwise r =
+
+        % get an arbitry point on r
+        let l0 = XPathRail.get-touchstone r in
+        let p0 = XPathRail.loc-to-point l0 in
+
+        % create the orthgonal line from that point
+        let pv =
+            XPathRail.get-derivative l0 r
+            |> point-perp
+        in
+        let line = (p0, p0 +.. pv) in
+
+        % count intersections with line and r
+        let cnt = get-line-intersects r line
+            |> List.fold-left (fun cnt l -> (
+
+                % ignore p0
+                if compare-loc l0 l = 0 then
+                    cnt
+                else
+
+                    % the point is on the semi-line?
+                    let u = XPathRail.loc-to-point l
+                        |> get-position-in-line line in
+                    if u >. 0. then
+
+                        % discriminate the direction on intersections
+                        let p = XPathRail.get-derivative l r in
+                        let v = point-divide p0 p in
+                        if v >' 0pt then
+                            cnt + 1 % same direction
+                        else
+                            cnt - 1 % anti direction
+                    else
+                        cnt
+        )) in
+        cnt == 0
+
+
+    % let is-contained-in r1 r2 =
+        % r2 in r1 <=> r2 ⊆  r1
+
+
+
+
+
+
+
+
+
+
+end

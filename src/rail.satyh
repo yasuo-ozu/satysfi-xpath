@@ -60,6 +60,8 @@ module XPathRail : sig
     val get-derivative : loc -> t -> point
     val get-line-intersects : t -> point * point -> loc list
 
+    val offset : length -> t -> t
+
 end = struct
 
     type t = point * point * (curve list)
@@ -492,6 +494,43 @@ end = struct
                   (-1, 0. /. 0., point-nil)
         in
         impl 0 cs len
+
+
+    let offset l (pa, pe, cs) =
+        let (v3, lst) = cs |> List.fold-right (fun curve (v0, rs) -> (
+            let (p0, p1, p2, p3) = XPathCurve.as-controls curve in
+            let v1 = p1 -.. p0 in
+            let v2 = p2 -.. p1 in
+            let v3 = p3 -.. p2 in
+            let vp2 = point-perp v2 |> point-normalize l in
+            let vp3 = point-perp (v0 +.. v3) |> point-normalize l in
+            (v1, (
+                (point-nil, v1),
+                (((p1 +.. p2) *.. 0.5) +.. vp2, v2),
+                (p3 +.. vp3, v3)
+            )::rs)
+        )) ((0pt, 0pt), []) in
+        let vp = point-perp v3 |> point-normalize l in
+        let pa = pa +.. vp in
+        let (pe, lst) = lst |> List.fold-left (fun (p, acc) (a, b, c) -> (
+            let (pc, _) = c in
+            let (_, va) = a in
+              (pc, List.append acc [((p, va), b, c)])
+        )) (pa, []) in
+        (pa, pe, lst |> List.map (fun ((p0, v1), (pm, v2), (p3, v3)) -> (
+            let l1 = get-line-equation (p0, p0 +.. v1) in
+            let l2 = get-line-equation (pm, pm +.. v2) in
+            let l3 = get-line-equation (p3 -.. v3, p3) in
+            let p1 = match get-line-intersection l1 l2 with
+            | Some(p1) -> p1
+            | None -> p0 +.. v1
+            in
+            let p2 = match get-line-intersection l2 l3 with
+            | Some(p2) -> p2
+            | None -> p3 -.. v3
+            in
+            (p0, p1, p2, p3) |> XPathCurve.from-controls
+        )))
 
 
     let run-debug () = ()

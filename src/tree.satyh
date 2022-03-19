@@ -1,0 +1,71 @@
+@require: list
+@import: rail
+@import: loop
+
+
+% a R-Tree inspired hierarchical data structure, representing loop relations
+module XPathTree : sig
+    type t
+
+    val new : t
+    val add-loop : XPathLoop.t -> t -> t
+    val remove-inner-loops : t -> t
+    val into-loops : t -> XPathLoop.t list
+
+end = struct
+
+    type t = (XPathLoop.t * bool) option * t list
+
+    let new = (None, [])
+
+    let add-loop loop tre =
+        let-rec impl (item, ts) =
+            let oloop =
+                match item with
+                | Some(loop0, _) ->
+                    let b = loop |> XPathLoop.is-contained-in loop0 in
+                    if b then None else Some(loop0)
+                | None -> None
+            in
+            match oloop with
+            | None ->
+                % try inserting loop into individual ts
+                let-rec impl-sub ts =
+                    match ts with
+                    | [] -> None
+                    | tre::ts -> (
+                          let (tre, oloop) = impl tre in
+                          match oloop with
+                          | Some(_) -> tre::(impl-sub ts)
+                          | None -> Some(tre::ts)
+                    )
+                in
+
+                % add loop into ts
+                let ts = match impl-sub ts with
+                    | None -> (Some(loop, XPathLoop.is-counter-clockwise loop), [])::ts
+                    | Some(ts) -> ts
+                in
+                ((item, ts), None)
+            | _ ->
+                ((item, ts), oloop)
+        in
+        let (res, oloop) = impl tre in
+        match oloop with
+        | None -> res
+        | Some(oloop) -> (
+              let item = (loop, XPathLoop.is-counter-clockwise loop) in
+              if oloop |> XPathLoop.is-contained-in loop then
+                  (Some(item), [res])
+              else
+                  (None, [res; (item, [])])
+        )
+
+
+    let remove-inner-loops tre =
+        let-rec impl level (item, ts) =
+            let match item with
+            | Some((loop, b)) ->
+
+
+end

@@ -79,6 +79,7 @@ module XPathUtil : sig
     val get-root-cubic : float -> float -> float -> float -> float list
 
     val get-line-equation : point * point -> float * float * length
+    val get-line-intersection : float * float * length -> float * float * length -> point option
     val get-line-line-intersects : point * point -> point * point -> (float * float) list
     val linear-to-position : float -> float
     val get-position-in-line : point * point -> point -> float
@@ -369,6 +370,18 @@ end = struct
         % else
         %     (1., (xb -' xa) /' (ya -' yb),
         %     1pt *' ((ya *' (xb /' 1pt) -' yb *' (xa /' 1pt)) /' (yb -' ya)))
+
+
+    let get-line-intersection (a1, b1, c1) (a2, b2, c2) =
+        let denom = a1 *. b2 -. a2 *. b1 in
+        if float-abs denom <. eps then
+            None
+        else
+            let r = 1. /. denom in
+            Some((
+                (c2 *' b1 -' c1 *' b2) *' r,
+                (c1 *' a2 -' c2 *' a1) *' r
+            ))
 
 
     let linear-to-position l =

@@ -34,6 +34,9 @@ module XPath : sig
     %val remove-inner-edges : delta -> t -> t
 
     % path transformation functions
+    val offset : length -> pre -> pre
+    val offset-path : length -> t -> t
+
     % val outset-path : length -> t -> t
     % val inset-path : length -> t -> t
     % val simplify-path : float -> t -> t
@@ -71,6 +74,16 @@ end = struct
 
     type pre = PrePoint of point | PreRail of rail
     type t = pre list
+
+
+    let offset l pp =
+        match pp with
+        | PrePoint(p) -> PrePoint(p)
+        | PreRail(r) -> PreRail(XPathRail.offset l r)
+
+
+    let offset-path l p =
+        p |> List.map (offset l)
 
 
     let to-embedded-prepath pp =

@@ -1,0 +1,676 @@
+@require: list
+@require: color
+@require: gr
+
+type point = length * length
+
+module XPath : sig
+    type xpath
+    type prexpath
+
+    % SATySFi compatible APIs
+    val unite-path : xpath -> xpath -> xpath
+    val shift-path : point -> xpath -> xpath
+    val linear-transform-path : float -> float -> float -> float -> xpath -> xpath
+    val get-path-bbox : xpath -> point * point
+    val start-path : point -> prexpath
+    val line-to : point -> prexpath -> prexpath
+    val bezier-to : point -> point -> point -> prexpath -> prexpath
+    val terminate-path : prexpath -> xpath
+    val close-with-line : prexpath -> xpath
+    val close-with-bezier : point -> point -> prexpath -> xpath
+    val stroke : length -> color -> xpath -> graphics
+    val fill : color -> xpath -> graphics
+    val dashed-stroke : length -> length * length * length -> color -> xpath -> graphics
+
+    % conversion
+    val to-embedded-path : xpath -> path
+    val to-embedded-prepath : prexpath -> pre-path
+
+    % path transformation functions
+    % val outset-path : length -> xpath -> xpath
+    % val inset-path : length -> xpath -> xpath
+    % val simplify-path : float -> xpath -> xpath
+    % val deformation-by-path : xpath -> xpath -> xpath
+    % val deformation-by-func : (point -> point) -> xpath -> xpath
+
+    % path composition functions
+    % val outline-of-path : length -> xpath -> xpath
+    % val outline-of-path-with-func : (length -> (length * length) option) -> xpath -> xpath
+    % val make-union-of-paths : xpath -> xpath -> xpath
+    % val make-intersection-of-paths : xpath -> xpath -> xpath
+    % val make-difference-of-paths : xpath -> xpath -> xpath
+    % val make-exclusion-of-paths : xpath -> xpath -> xpath
+    % val make-division-of-paths : xpath -> xpath -> xpath
+    % val make-cut-of-paths : xpath -> xpath -> xpath
+    % val combine-paths : xpath -> xpath -> xpath
+    % val break-apart-paths : xpath -> xpath -> xpath
+
+    % analyzing functions
+    % val get-cross-points : xpath -> xpath -> point * float list
+    % val get-length-of-path : xpath -> length
+    % val get-passing-point : float -> xpath -> point * float
+    % val get-area-level : point -> xpath -> int
+    % val get-enclosing-path : point -> xpath -> xpath
+
+    % debugging functions
+    val debug-path : xpath -> graphics list
+    % val debug-prepath : prexpath -> graphics
+    % val path-to-text : xpath -> string
+    % val prepath-to-text : prexpath -> string
+    val debug-func : unit
+
+end = struct
+    let display-point name (x, y) =
+        display-message (name ^ #` = `# ^ (show-float (x /' 1cm) ^ `, ` ^ (show-float (y /' 1cm))))
+    let display-length name l =
+        display-message (name ^ #` = `# ^ (show-float (l /' 1cm) ))
+    let display-float name l =
+        display-message (name ^ #` = `# ^ (show-float (l) ))
+    let display-int name l =
+        display-message (name ^ #` = `# ^ (arabic (l) ))
+
+    %let eps = 0.00000001
+    let eps = 0.0001
+
+    % backend/graphicBase.ml:12
+    type path-element = point * point * point * point
+
+    % backend/prePath.ml:6
+    type prexpath = point * point * path-element list
+
+    % backend/graphicBase.ml:16
+    type path-string = path-element list
+
+    type xpath = path-string list
+
+    % private functions
+    let pow a b = exp (b *. (log a))
+    let sqrt a = pow a 0.5
+    let cubic a = pow a (1.0 /. 3.0)
+    let square a = a *. a
+    let cube a = a *. a *. a
+
+    let path-nil = start-path (0pt, 0pt) |> terminate-path
+    let shift-point (x1, y1) (x2, y2) = (x1 +' x2, y1 +' y2)
+    let shift-path-element v (p1, p2, p3, p4) = (shift-point v p1, shift-point v p2, shift-point v p3, shift-point v p4)
+    let shift-path-string v lst = lst |> List.map (shift-path-element v)
+    let point-add (x1, y1) (x2, y2) = (x1 +' x2, y1 +' y2)
+    let point-add3 (x1, y1) (x2, y2) (x3, y3) = (x1 +' x2 +' x3, y1 +' y2 +' y3)
+    let point-sub (x1, y1) (x2, y2) = (x1 -' x2, y1 -' y2)
+    let point-mul t (x, y) = (x *' t, y *' t)
+    let float-neg a = (0. -. 1.) *. a
+    let float-zero-or-nan a = not (1pt *' a <' 1pt *' (float-neg a) || 1pt *' a >' 1pt *' (float-neg a))
+    let float-zero a = float-zero-or-nan a && not float-zero-or-nan (a +. 1.)
+    let float-eq a b = float-zero (a -. b)
+    let length-abs l = if l >' 0pt then l else 0pt -' l
+    let length-zero l = ((length-abs l) /' 1pt) |> float-zero
+    let length-eq a b = length-zero (a -' b)
+    let (=') = length-eq
+    let (=.) = float-eq
+    let (>.) a b = 1pt *' a >' 1pt *' b
+    let (<.) a b = 1pt *' a <' 1pt *' b
+    let (>=.) a b = a >. b || a =. b
+    let (<=.) a b = a <. b || a =. b
+    let (>=') a b = a >' b || a =' b
+    let (<=') a b = a <' b || a =' b
+    let int-abs a = if a > 0 then a else 0 - a
+    let float-abs a = if 1pt *' a >' 0pt then a else (0. -. 1.) *. a
+    let float-min a b = if a <. b then a else b
+    let float-max a b = if a >. b then a else b
+    let point-eq (x1, y1) (x2, y2) = length-zero (x1 -' x2) && length-zero (y1 -' y2)
+    let point-len (x, y) = 1pt *'( sqrt ((square (x /' 1pt)) +. (square (y /' 1pt))))
+    % (x2, y2)のうち(x1, y1)と平行な成分の長さ(反平行なら負の長さ)
+    let point-divide (x1, y1) (x2, y2) =
+        let l = point-len (x1, y1) in
+        x2 *' (x1 /' l) +' y2 *' (y1 /' l)
+    let pathelem-is-line (p1, p2, p3, p4) = point-eq p1 p2 && point-eq p3 p4
+    let point-divide-cross (x1, y1) (x2, y2) =
+        let l = point-len (x1, y1) in
+        x2 *' (y1 /' l *' (0. -. 1.)) +' y2 *' (x1 /' l)
+
+    % (x, y) の向きを変えずに長さをlにする
+    let point-normalize l (x, y) = let r = l /' (point-len (x, y)) in point-mul r (x, y)
+
+    let intersect delta (p1, p2) (p3, p4) =
+        let f (x1, y1) (x2, y2) (x3, y3) =
+            ((x2 -' x1) /' 1pt) *. ((y3 -' y1) /' 1pt)
+            -. ((y2 -' y1) /' 1pt) *. ((x3 -' x1) /' 1pt)
+        in
+        let t1 = f p1 p2 p3 in
+        let t2 = f p1 p2 p4 in
+        let t3 = f p3 p4 p1 in
+        let t4 = f p3 p4 p2 in
+        1pt *' (t1 *. t2) <=' delta && 1pt *' (t3 *. t4) <=' delta
+
+    let length-abs len = if len >' 0pt then len else len *' (0. -. 1.)
+
+    let-rec point-distance (x1, y1) (x2, y2) =
+        let (fx1, fx2, fy1, fy2) = (x1 /' 1pt, x2 /' 1pt, y1 /' 1pt, y2 /' 1pt) in
+        1pt *' (sqrt ((fx1 -. fx2) *. (fx1 -. fx2) +. (fy1 -. fy2) *. (fy1 -. fy2)))
+
+    % get sorted roots
+    let get-root-cubic a3 a2 a1 a0 =
+        let epsilon = eps *. float-max (
+            float-max (float-max (float-abs a3) (float-abs a2)) (float-abs a1)
+        ) (float-abs a0) in
+        let new-root cond a lst =
+            let-rec contains-list f lst =
+                match lst with
+                | item :: rem -> if f item then true else contains-list f rem
+                | [] -> false
+            in
+            if cond && (not contains-list (fun b -> (float-abs (a -. b) <. epsilon)) lst) then
+                a :: lst
+            else
+                lst
+        in
+        if float-zero a3 then
+            if float-zero a2 then
+                if float-zero a1 then
+                    []
+                else
+                    [0. -. a0 /. a1]
+            else
+                let d = a1 *. a1 -. 4. *. a0 *. a2 in
+                let c = 0. -. a1 /. (2. *. a2) in
+                let d = if (float-abs d <. epsilon) then 0. else d in
+                if d <. 0. then []
+                else if float-zero d then [c]
+                else
+                    if a2 >. 0. then
+                    [
+                        c -. (sqrt d) /. (2. *. a2);
+                        c +. (sqrt d) /. (2. *. a2);
+                    ]
+                    else
+                    [
+                        c +. (sqrt d) /. (2. *. a2);
+                        c -. (sqrt d) /. (2. *. a2);
+                    ]
+        else
+            % 3-dim
+            let c1 = (0. -. 2. *. (cube a2)) +. 9. *. a1 *. a2 *. a3 -. 27. *. a0 *. (square a3) in
+            let c4 = (0. -. (square a2)) +. 3. *. a1 *. a3 in
+            let c3 = c1 *. c1 +. 4. *. (cube c4) in
+            let (c2re, c2im) = if c3 >=. 0. then (c1 +. (sqrt c3), 0.) else (c1, sqrt (float-neg c3)) in
+            let r = pow (c2re *. c2re +. c2im *. c2im) (1. /. 6.) in
+            let theta = (atan (c2im /. c2re)) /. 3. in
+            let theta = if c2re >=. 0. then theta else theta +. 1.04719755 in
+            let c5re = r *. (cos theta) in
+            let c5im = r *. (sin theta) in
+            let sqrt3 = sqrt 3. in
+            let c6pre = c5re -. sqrt3 *. c5im in
+            let c6mre = c5re +. sqrt3 *. c5im in
+            let c6pim = sqrt3 *. c5re +. c5im in
+            let c6mim = 0. -. sqrt3 *. c5re +. c5im in
+            let c7 = 0. -. a2 /. (3. *. a3) in
+            let c8 = 6. *. (cubic 2.) *. a3 in
+            let c9common = 1. /. (r *. 3. *. a3) in
+            let c9re = (cos theta) *. c9common  in
+            let c9im = 0. -. (sin theta) *. c9common in
+            let c10pre = c9re -. sqrt3 *. c9im in
+            let c10mre = c9re +. sqrt3 *. c9im in
+            let c10pim = sqrt3 *. c9re +. c9im in
+            let c10mim = (0. -. sqrt3 *. c9re) +. c9im in
+            let x1re = c7 +. c5re *. 2. /. c8 -. (cubic 2.) *. c4 *. c9re in
+            let x1im = c5im *. 2. /. c8 -. (cubic 2.) *. c4 *. c9im in
+            let c11 = c4 /. (pow 2. (2. /. 3.)) in
+            let x2re = c7 -. c6mre /. c8 +. c11 *. c10pre in
+            let x2im = 0. -. c6mim /. c8 +. c11 *. c10pim in
+            let x3re = c7 -. c6pre /. c8 +. c11 *. c10mre in
+            let x3im = 0. -. c6pim /. c8 +. c11 *. c10mim in
+            let (x1re, x1im, x2re, x2im) =
+                if x2re <. x1re then (x2re, x2im, x1re, x1im) else (x1re, x1im, x2re, x2im) in
+            let (x2re, x2im, x3re, x3im) =
+                if x3re <. x2re then (x3re, x3im, x2re, x2im) else (x2re, x2im, x3re, x3im) in
+            let (x1re, x1im, x2re, x2im) =
+                if x2re <. x1re then (x2re, x2im, x1re, x1im) else (x1re, x1im, x2re, x2im) in
+            (if float-abs x3im <. epsilon then [x3re] else [])
+                |> new-root (float-abs x2im <. epsilon) x2re
+                |> new-root (float-abs x1im <. epsilon) x1re
+            % x1re <= x2re <= x3re
+
+    let-rec line-point-distance (x1, y1) (x2, y2) (x, y) =
+        if (length-abs (x1 -' x2)) >' (length-abs (y1 -' y2)) then
+            line-point-distance (y1, x1) (y2, x2) (y, x)
+        else
+            let (fx1, fx2, fy1, fy2, fx, fy) = (x1 /' 1pt, x2 /' 1pt, y1 /' 1pt, y2 /' 1pt, x /' 1pt, y /' 1pt) in
+            if length-zero (y1 -' y2) then
+                1pt *' (sqrt ((fx1 -. fx) *. (fx1 -. fx) +. (fy1 -. fy) *. (fy1 -. fy)))
+            else
+                let b = (fx2 -. fx1) /. (fy1 -. fy2) in
+                let c = (fx1 *. fy2 -. fx2 *. fy1) /. (fy1 -. fy2) in
+                1pt *' (fx +. b *. fy +. c) /. (sqrt (1.0 +. b *. b))
+
+    
+    let rough-bbox-of-pathelem (p1, p2, p3, p4) =
+        let ((x1, y1), (x2, y2), (x3, y3), (x4, y4)) = (p1, p2, p3, p4) in
+        % let d2 = line-point-distance p1 p4 p2 in
+        % let d3 = line-point-distance p1 p4 p3 in
+        let m = point-distance p1 p4 in
+        let (vx, vy) =
+            if length-zero m then (0., 0.)
+            else ( ((y1 -' y4) /' m), ((x4 -' x1) /' m))
+        in
+        let d2 = (x2 -' x1) *' vx +' (y2 -' y1) *' vy in
+        let d3 = (x3 -' x4) *' vx +' (y3 -' y4) *' vy in
+        let (dp, dm) =
+            if d2 >' 0pt && d3 >' 0pt then
+                ((length-max d2 d3) *' (3. /. 4.), 0pt)
+            else if d2 <' 0pt && d3 <' 0pt then
+                (0pt, (length-min d2 d3) *' (3. /. 4.))
+            else
+                let (dp, dm) = if d2 >' d3 then (d2, d3) else (d3, d2) in
+                (dp *' (4. /. 9.), dm *' (4. /. 9.))
+        in
+        % let (dp, dm) = if y1 <' y4 then (dp, dm) else (0pt -' dm, 0pt -' dp) in
+        let l1 = (point-divide (point-sub p1 p4) (point-sub p2 p1)) *' 0.2 in
+        let l2 = (point-divide (point-sub p4 p1) (point-sub p3 p4)) *' 0.2 in
+        let vl1 = if l1 >' 0pt then point-normalize l1 (point-sub p1 p4) else (0pt, 0pt) in
+        let vl2 = if l2 >' 0pt then point-normalize l2 (point-sub p4 p1) else (0pt, 0pt) in
+        (point-add3 p1 vl1 (dp *' vx, dp *' vy),
+        point-add3 p4 vl2 (dp *' vx, dp *' vy),
+        point-add3 p4 vl2 (dm *' vx, dm *' vy),
+        point-add3 p1 vl1 (dm *' vx, dm *' vy))
+
+    let cross-product (x1, y1) (x2, y2) = x1 *' (y2 /' 1pt) -' x2 *' (y1 /' 1pt)
+    let point-in-poly delta p1 p2 p3 p4 p0 =
+        cross-product (point-sub p2 p1) (point-sub p0 p1) <=' delta &&
+        cross-product (point-sub p3 p2) (point-sub p0 p2) <=' delta &&
+        cross-product (point-sub p4 p3) (point-sub p0 p3) <=' delta &&
+        cross-product (point-sub p1 p4) (point-sub p0 p4) <=' delta
+
+    let cross-of-pathelem elem1 elem2 =
+        let (p1a, p1b, p1c, p1d) = rough-bbox-of-pathelem elem1 in
+        let (p2a, p2b, p2c, p2d) = rough-bbox-of-pathelem elem2 in
+        let d = (length-max (point-len (point-sub p1d p1a)) (point-len (point-sub p2d p2a))) *' eps in
+        %point-in-poly d p1a p1b p1c p1d p2a ||
+        %point-in-poly d p1a p1b p1c p1d p2b ||
+        %point-in-poly d p1a p1b p1c p1d p2c ||
+        %point-in-poly d p1a p1b p1c p1d p2d ||
+        %point-in-poly d p2a p2b p2c p2d p1a ||
+        %point-in-poly d p2a p2b p2c p2d p1b ||
+        %point-in-poly d p2a p2b p2c p2d p1c ||
+        %point-in-poly d p2a p2b p2c p2d p1d
+        let (l1a, l1b, l1c, l1d) = ((p1a, p1b), (p1b, p1c), (p1c, p1d), (p1d, p1a)) in
+        let (l2a, l2b, l2c, l2d) = ((p2a, p2b), (p2b, p2c), (p2c, p2d), (p2d, p2a)) in
+        intersect d l1a l2a || intersect d l1a l2b || intersect d l1a l2c || intersect d l1a l2d ||
+        intersect d l1b l2a || intersect d l1b l2b || intersect d l1b l2c || intersect d l1b l2d ||
+        intersect d l1c l2a || intersect d l1c l2b || intersect d l1c l2c || intersect d l1c l2d ||
+        intersect d l1d l2a || intersect d l1d l2b || intersect d l1d l2c || intersect d l1d l2d ||
+        point-in-poly d p1a p1b p1c p1d p2a ||
+        point-in-poly d p2a p2b p2c p2d p1a
+
+    let split-pathelem t (p1, p2, p3, p4) =
+        let u = 1.0 -. t in
+        let p12 = point-add (point-mul u p1) (point-mul t p2) in
+        let p23 = point-add (point-mul u p2) (point-mul t p3) in
+        let p34 = point-add (point-mul u p3) (point-mul t p4) in
+        let p123 = point-add (point-mul u p12) (point-mul t p23) in
+        let p234 = point-add (point-mul u p23) (point-mul t p34) in
+        let p1234 = point-add (point-mul u p123) (point-mul t p234) in
+        ((p1, p12, p123, p1234), (p1234, p234, p34, p4))
+
+    let split-pathelem-by-span t0 t1 elem =
+        let (elem, _) = split-pathelem t1 elem in
+        let (_, elem) = split-pathelem (t0 /. t1) elem in
+        elem
+
+    let pathelem-to-point t (p1, p2, p3, p4) =
+        let u = 1. -. t in
+        point-add
+            (point-add (point-mul (cube u) p1) (point-mul (u *. u *. t *. 3.) p2))
+            (point-add (point-mul (u *. t *. t *. 3.) p3) (point-mul (cube t) p4))
+
+    let get-crossing-ts-of-pathelem-with-line pelem (xa, ya) (xb, yb) =
+        let ((x1, y1), (x2, y2), (x3, y3), (x4, y4)) = pelem in
+        let delta = length-max (length-abs (x4 -' x1)) (length-abs (y4 -' y1)) *' eps in
+        let (a, b, c) = if length-eq ya yb then
+                (0.,1., 0pt -' ya)
+            else
+                (1., (xb -' xa) /' (ya -' yb),
+                1pt *' ((ya *' (xb /' 1pt) -' yb *' (xa /' 1pt)) /' (yb -' ya)))
+        in
+        let a3 = (x4 -' x3 *' 3. +' x2 *' 3. -' x1) *' a +' (y4 -' y3 *' 3. +' y2 *' 3. -' y1) *' b in
+        let a2 = (x3 -' x2 *' 2. +' x1) *' (a *. 3.) +' (y3 -' y2 *' 2. +' y1) *' (b *. 3.) in
+        let a1 = (x2 -' x1) *' (a *. 3.) +' (y2 -' y1) *' (b *. 3.) in
+        let a0 = x1 *' a +' y1 *' b +' c in
+        let res = get-root-cubic (a3 /' 1pt) (a2 /' 1pt) (a1 /' 1pt) (a0 /' 1pt) in
+        res |> List.filter (fun t ->(
+                t +. eps >=. 0. && t -. eps <=. 1.
+                %    && (
+                %    if float-zero a then
+                %        xa -' delta <=' x && x <=' xb +' delta
+                %    else
+                %        ya -' delta <=' y && y <=' yb +' delta
+                %)
+            ))
+
+    let get-cross-points-of-pathelem-with-line pelem pa pb =
+        get-crossing-ts-of-pathelem-with-line pelem pa pb
+            |> List.map (fun t -> pathelem-to-point t pelem)
+
+    % let get-cross-points-of-lines (x1a, y1a) (x1b, y1b) (x2a, y2a) (x2b, y2b) =
+    %     let (a1, b1, c1) = if length-eq y1a y1b then
+    %             (0., 1., y1a)
+    %         else
+    %             (1., (xb -' xa) /' (ya -' yb),
+    %             1pt *' ((xa *' (yb /' 1pt) -' xb *' (ya /' 1pt)) /' (ya -' yb)))
+    %     in
+
+
+    let-rec get-cross-points-of-pathelem-inner eps elem1 elem2 =
+        let (p1, p2, p3, p4) = elem1 in
+        let (p5, p6, p7, p8) = elem2 in
+        %if
+        %    point-eq p1 p5 && point-eq p2 p6 && point-eq p3 p7 && point-eq p4 p8 ||
+        %    point-eq p1 p8 && point-eq p2 p7 && point-eq p3 p6 && point-eq p4 p5
+        %then
+        %    []
+        %        else
+        if cross-of-pathelem elem1 elem2 then
+            let l1 = point-distance p1 p4 in
+            let l2 = point-distance p5 p8 in
+            if l1 <' eps then
+                [point-add (point-mul 0.5 p1) (point-mul 0.5 p4)]
+            else if l2 <' eps then
+                [point-add (point-mul 0.5 p5) (point-mul 0.5 p8)]
+            else
+                let (elem11, elem12) = split-pathelem 0.5 elem1 in
+                let (elem21, elem22) = split-pathelem 0.5 elem2 in
+                List.concat [
+                    get-cross-points-of-pathelem-inner eps elem11 elem21;
+                    get-cross-points-of-pathelem-inner eps elem11 elem22;
+                    get-cross-points-of-pathelem-inner eps elem12 elem21;
+                    get-cross-points-of-pathelem-inner eps elem12 elem22;
+                ]
+        else []
+
+    let get-t-ranges-between-lines (pa1, pa2, pb1, pb2) elem =
+        let ts1 = get-crossing-ts-of-pathelem-with-line elem pa1 pa2 in
+        let ts2 = get-crossing-ts-of-pathelem-with-line elem pb1 pb2 in
+        let-rec sort-ts ts1 ts2 = match (ts1, ts2) with
+            | ([], []) -> []
+            | (t1::rts1, []) -> (1, t1) :: (sort-ts rts1 [])
+            | ([], t2::rts2) -> (2, t2) :: (sort-ts [] rts2)
+            | (t1::rts1, t2::rts2) ->
+                  if t2 <. t1 then
+                      (2, t2) :: (sort-ts (t1::rts1) rts2)
+                  else
+                      (1, t1) :: (sort-ts rts1 (t2::rts2))
+        in
+        let (t0, lst) = match sort-ts ts1 ts2 with
+        | [] -> (0.5, [])
+        | (ln, t):: rlist ->
+              if (float-abs t) <. eps then
+                  match rlist with
+                  | (_, t2) :: rlist2 ->
+                        ((t +. t2) /. 2., rlist)
+                  | _ -> (0.5, [])
+              else
+                  (0., (ln, t)::rlist)
+        in
+        let () = lst |> List.iter(fun (ln, t) -> (
+            display-int `LN` ln before
+            display-float `T` t
+        )) in
+        let p0 = pathelem-to-point t0 elem in
+        let l1 = point-divide (point-sub pb1 pa1) (point-sub p0 pa1) in
+        let l2 = point-divide (point-sub pa1 pb1) (point-sub p0 pb1) in
+        let state = if l1 <' 0pt then 1 else if l2 <' 0pt then 2 else 0 in
+        let (state, t, res) = lst |> List.fold-left (fun (state, t0, res) (ln, t) ->
+            (
+                int-abs (state - ln), t,
+                if state == 0 then (List.append res [(t0, t)]) else res
+            )
+        ) (state, 0., []) in
+        let res = if float-abs (t -. 1.) <. eps || state <> 0 then
+                res
+            else
+                List.append res [(t, 1.)]
+        in
+        res
+
+    let-rec get-crossing-t-of-pathelems eps elem1 elem2 =
+        let ((e1a, _, _, e1b), (e2a, _, _, e2b)) = (elem1, elem2) in
+        let l1 = point-distance e1a e1b in
+        let l2 = point-distance e2a e2b in
+        let (l, pa, pb, sn) = if l1 <' l2 then (l1, e1a, e1b, 1) else (l2, e2a, e2b, 2) in
+        if l <' eps then
+            [(point-mul 0.5 (point-add pa pb), 0.5, 0.5)]
+        else
+            let (b1a, b1b, b1c, b1d) = rough-bbox-of-pathelem elem1 in
+            let (b2a, b2b, b2c, b2d) = rough-bbox-of-pathelem elem2 in
+            let (mts, prop) = [
+                (elem1, 1, (b2a, b2b, b2d, b2c));
+                (elem1, 1, (b2a, b2d, b2b, b2c));
+                (elem2, 2, (b1a, b1b, b1d, b1c));
+                (elem2, 2, (b1a, b1d, b1b, b1c));
+            ] |> List.fold-left (fun (mts, prop) (elem, n, ps) -> (
+                let spans = get-t-ranges-between-lines ps elem in
+                  let () = display-int `len spans` (List.length spans) in
+                let tlen = spans |> List.fold-left
+                    (fun tlen (t0, t1) -> (tlen +. t1 -. t0))
+                    0.
+                in
+                if tlen <. mts then
+                    (tlen, Some(elem, n, spans))
+                else
+                    (mts, prop)
+            )) (1., None) in
+            match prop with
+            | None -> []  % No crossing
+            | Some((elem, n, spans)) ->
+              if mts <. 0.8 then
+                  spans |> List.fold-left  (fun ret (t0, t1) -> (
+                      let dt = t1 -. t0 in
+                      let elem = split-pathelem-by-span t0 t1 elem in
+                      (
+                          if n == 1 then
+                              get-crossing-t-of-pathelems eps elem elem2
+                          else
+                              get-crossing-t-of-pathelems eps elem1 elem
+                      ) |> List.map (fun (pp, u1, u2) -> (
+                          if n == 1 then
+                            (pp, t0 +. dt *. u1, u2)
+                          else
+                            (pp, u1, t0 +. dt *. u2)
+                      )) |> List.append ret
+                  )) []
+              else (
+                  let (spans, rt) = [0.0; 0.2; 0.4; 0.6; 0.8] |> List.fold-left (fun (rlist, rt) t0 -> (
+                      let t1 = t0 +. 0.2 in
+                      let (elems, eleml) = if sn == 1 then (elem1, elem2) else (elem2, elem1) in
+                      let elem = split-pathelem-by-span t0 (t0 +. 0.2) eleml in
+                      let res = if sn == 1 then
+                          get-crossing-t-of-pathelems eps elems elem
+                      else
+                          get-crossing-t-of-pathelems eps elem elems
+                      in
+                      if List.length res == 0 then
+                          if rt <. t0 then
+                              (List.append rlist [(rt, t0)], t1)
+                          else
+                              (rlist, t1)
+                      else
+                          (rlist, rt)
+                  )) ([], 0.) in
+                  let spans = if rt <. 1. then List.append spans [(rt, 1.)] else spans in
+                  if List.length spans < 2 then
+                      []
+                  else
+                      spans |> List.map (fun (t0, t1) -> (
+                          if sn == 1 then
+                              get-crossing-t-of-pathelems eps elem1 (split-pathelem-by-span t0 t1 elem2)
+                          else
+                              get-crossing-t-of-pathelems eps (split-pathelem-by-span t0 t1 elem1) elem2
+                      )) |> List.concat
+              )
+
+
+
+        
+    let-rec get-cross-points-of-pathelem elem1 elem2 =
+        if pathelem-is-line elem1 then
+            let (p1, _, _, p4) = elem1 in
+            get-cross-points-of-pathelem-with-line elem2 p1 p4
+        else if pathelem-is-line elem2 then
+            get-cross-points-of-pathelem elem2 elem1
+        else
+            get-crossing-t-of-pathelems 0.01pt elem1 elem2
+                |> List.map (fun (_,u1, u2) -> (
+                    let p1 = pathelem-to-point u1 elem1 in
+                    let p2 = pathelem-to-point u2 elem2 in
+                    point-mul 0.5 (point-add p1 p2)
+                ))
+
+
+    let get-cross-points-of-path pat =
+        pat |> List.mapi(fun i0 lst0 -> (
+            lst0 |> List.mapi(fun j0 elem0 -> (
+                pat |> List.mapi(fun i1 lst1 -> (
+                    lst1 |> List.mapi(fun j1 elem1 -> (
+                        %if i0 <> i1 || j0 < j1 - 1 || j0 > j1 + 1 then
+                        if i0 <> i1 || j0 <> j1 then
+                            get-cross-points-of-pathelem elem0 elem1
+                        else
+                            []
+
+
+                    )) |> List.concat
+                )) |> List.concat
+            )) |> List.concat
+        )) |> List.concat
+
+    let get-cross-points-of-paths pat1 pat2 =
+        let elemlst1 = pat1 |> List.concat in
+        let elemlst2 = pat2 |> List.concat in
+        elemlst1 |> List.map (fun elem1 -> (
+            elemlst2 |> List.map (fun elem2 -> (
+                get-cross-points-of-pathelem elem1 elem2
+            )) |> List.concat
+        )) |> List.concat
+
+    % public functions
+
+    let to-embedded-inner elemlst =
+        let-rec f ps = match ps with
+            | (p1, p2, p3, p4)::rm -> (
+                  let bpath = Option.from (start-path p1) (f rm) in
+                  if point-eq p1 p2 && point-eq p3 p4 then
+                      Some(bpath |> line-to p4)
+                  else
+                      Some(bpath |> bezier-to p2 p3 p4)
+            )
+            | [] -> None
+        in
+        match (f elemlst) with
+        | Some(p) -> p
+        | None -> (
+              let () = display-message `Internal error in xpath` in
+             start-path (0pt, 0pt)
+        )
+
+    let to-embedded-prepath (_, _, elemlst) =
+        to-embedded-inner elemlst
+
+    let to-embedded-path pat =
+        let empatlst = pat |> List.map (fun lst -> (
+            (to-embedded-inner lst) |> terminate-path
+        )) in
+        match empatlst with
+        | [] -> path-nil
+        | [empat] -> empat
+        | empat :: lst -> lst |> List.fold-left (fun empat1 empat2 -> unite-path empat1 empat2) empat
+
+    % debugging functions
+    let debug-path pth =
+        let draw-handle (x, y) =
+            let pth = Gr.rectangle (x -' 2pt, y -' 2pt) (x +' 2pt, y +' 2pt) in
+            [
+                pth |> fill Color.white;
+                pth |> stroke 0.5pt Color.black;
+            ]
+        in
+        let draw-point (x, y) =
+            [ Gr.circle (x, y) 3pt |> fill Color.blue; ]
+        in
+        let mapf f =
+            pth |> List.map (fun ps -> (
+                ps |> List.map f |> List.concat |> List.concat
+            )) |> List.concat
+        in
+        [
+            [to-embedded-path pth |> fill (Color.gray 0.9)];
+            % Bounding Box
+            mapf (fun (p1, p2, p3, p4) -> [
+                let (b1, b2, b3, b4) = rough-bbox-of-pathelem (p1, p2, p3, p4) in
+                [start-path b1 |> line-to b2 |> line-to b3 |> line-to b4 |> close-with-line |> stroke 0.4pt Color.orange]
+            ]);
+            % Stroke
+            mapf (fun (p1, p2, p3, p4) -> [
+                [start-path p1 |> bezier-to p2 p3 p4 |> terminate-path |> stroke 0.4pt Color.blue]
+            ]);
+            % Handle
+            mapf (fun (p1, p2, p3, p4) -> [
+                List.concat [
+                    [
+                        start-path p1 |> line-to p2 |> terminate-path |> stroke 0.4pt (Color.black);
+                        start-path p3 |> line-to p4 |> terminate-path |> stroke 0.4pt (Color.black);
+                    ];
+                    draw-point p1;
+                    draw-point p4;
+                    if point-eq p1 p2 then [] else draw-handle p2;
+                    if point-eq p3 p4 then [] else draw-handle p3;
+                ];
+            ]);
+            get-cross-points-of-path pth |> (fun lst -> (
+                lst |> List.map (fun p -> (
+                    Gr.circle p 1.5pt |> fill Color.red
+                ))
+            ))
+        ] |> List.concat
+
+    let debug-func =
+        %get-crossing-t-of-pathelems 0.01pt ((-2cm, 0cm), (-2cm, 0cm), (2cm, 0cm), (2cm, 0cm))
+            %((-2cm, -1cm), (-2cm, 3cm), (2cm, -3cm), (2cm, 1cm))
+            %    |> List.iter (fun (p, t1, t2) -> (
+            %        let () = display-float `T1` t1 in
+            %        display-float `T2` t2
+            %    ))
+        ()
+        %let lines = ((-2cm, -0.2cm), (2cm, -0.2cm), (-2cm, 0.2cm), (2cm, 0.2cm)) in
+        %let elem = ((-2cm, -1cm), (-2cm, 3cm), (2cm, -3cm), (2cm, 1cm)) in
+        %get-t-ranges-between-lines lines elem
+        %        |> List.iter (fun (t1, t2) -> (
+        %            let () = display-float `T1` t1 in
+        %            let () = display-point `P1` (pathelem-to-point t1 elem) in
+        %            let () = display-float `T2` t2 in
+        %            display-point `P2` (pathelem-to-point t2 elem)
+        %        ))
+
+
+
+    % SATySFi compatible APIs
+    let unite-path pth1 pth2 = List.concat [ pth1; pth2 ]
+    let shift-path v pth = 
+        pth |> List.map (shift-path-string v)
+    let start-path p = (p, p, [])
+    let line-to p (px, p0, lst) = (p, p0, ((px, px, p, p))::lst)
+    let bezier-to p1 p2 p3 (px, p0, lst) = (p3, p0, ((px, p1, p2, p3)) :: lst)
+    let terminate-path (_, _, lst) = [lst]
+    let close-with-line (px, p0, lst) = [((px, px, p0, p0))::lst]
+    let close-with-bezier p1 p2 (px, p0, lst) = [((px, p1, p2, p0))::lst]
+    let stroke l color pat = to-embedded-path pat |> stroke l color
+    let fill color pat = to-embedded-path pat |> fill  color
+    let dashed-stroke l (l1, l2, l3) color pat = to-embedded-path pat |> dashed-stroke l (l1, l2, l3) color
+    let get-path-bbox pat = to-embedded-path pat |> get-path-bbox
+    let linear-transform-path a b c d pat =
+        let trans (x, y) =
+            (x *' a +' y *' b, x *' c +' y *' d)
+        in
+        pat |> List.map (fun ps -> (
+            ps |> List.map (fun (p1, p2, p3, p4) -> (trans p1, trans p2, trans p3, trans p4))
+        ))
+end
