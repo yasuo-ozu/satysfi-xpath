@@ -358,11 +358,17 @@ end = struct
 
 
     let get-line-equation ((xa, ya), (xb, yb)) =
-        if ya =' yb then
-                (0.,1., 0pt -' ya)
-        else
-            (1., (xb -' xa) /' (ya -' yb),
-            1pt *' ((ya *' (xb /' 1pt) -' yb *' (xa /' 1pt)) /' (yb -' ya)))
+        let (axa, axb) = (xa /' 1pt, xb /' 1pt) in
+        (
+            (ya -' yb) /' 1pt,
+            axb -. axa,
+            (yb *' axa -' ya *' axb)
+        )
+        % if ya =' yb then
+        %         (0.,1., 0pt -' ya)
+        % else
+        %     (1., (xb -' xa) /' (ya -' yb),
+        %     1pt *' ((ya *' (xb /' 1pt) -' yb *' (xa /' 1pt)) /' (yb -' ya)))
 
 
     let linear-to-position l =
