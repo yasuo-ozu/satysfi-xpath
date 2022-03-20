@@ -59,7 +59,7 @@ jobs:
 
       - name: Install ghostscript
         if: matrix.os == 'ubuntu-latest' && matrix.ocaml-version == '4.12.1'
-        run: sudo apt install ghostscript
+        run: sudo apt install ghostscript imagemagick
       - name: Change ImageMagick security policy
         if: matrix.os == 'ubuntu-latest' && matrix.ocaml-version == '4.12.1'
         run: |
