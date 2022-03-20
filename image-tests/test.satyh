@@ -1,0 +1,33 @@
+@require: list
+@import: ../src/util
+
+let-inline ctx \math m = embed-math ctx m
+
+let run-image-test gs =
+    let ((x1, y1), (x2, y2)) = match gs with
+        | [] -> ((0pt, 0pt), (100pt, 100pt))
+        | g::gs -> gs |> List.fold-left (fun ret g -> (
+              let (bb1, bb2) = get-graphics-bbox g in
+              concat-bbox ret (bb1,bb2)
+        )) (get-graphics-bbox g)
+    in
+    let w = x2 -' x1 in
+    let h = y2 -' y1 in
+    let ib = inline-graphics w h 0pt (fun (x, y) -> (
+        gs |> List.map (shift-graphics (x -' x1, y -' y1))
+    )) in
+    let ctx =
+        get-initial-context w (command \math)
+        |> set-dominant-narrow-script Latin
+        |> set-dominant-wide-script Kana
+    in
+    let bb = line-break true true ctx ib in
+    page-break A4Paper (fun _ -> (|
+        text-origin = (0pt, 0pt);
+        text-height = h;
+    |)) (fun _ -> (|
+      header-origin  = (0pt, 0pt);
+      header-content = block-nil;
+      footer-origin  = (0pt, 0pt);
+      footer-content = block-nil;
+    |)) bb

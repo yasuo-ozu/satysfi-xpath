@@ -1,0 +1,16 @@
+@import: test
+@import: ../src/xpath
+@require: color
+
+run-image-test [
+% BEGIN CODE
+XPath.(
+    start-path (0cm, 0cm)
+        |> bezier-to (0cm, 1.1cm) (-2cm, 1.1cm) (-2cm, 0cm)
+        |> line-to (0cm, -2cm) |> line-to (2cm, 0cm)
+        |> close-with-bezier (2cm, 1.1cm) (0cm, 1.1cm)
+        |> stroke 3pt (Color.red)
+)
+% END CODE
+]
+

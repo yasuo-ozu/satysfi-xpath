@@ -1,0 +1,60 @@
+% Import tests
+
+@import: ../src/util
+open XPathUtil
+
+let-inline ctx \math m =
+  embed-math ctx m
+
+module TestUtil : sig
+    val run-test : (unit -> unit) -> document
+
+    val assert : string -> bool -> unit
+    val assert-eq-float : string -> float -> float -> unit
+    val assert-eq-length : string -> length -> length -> unit
+    val assert-eq-point : string -> point -> point -> unit
+
+end = struct
+    let-mutable asserts <- 0
+    let-mutable errors <- 0
+
+    let run-test testf =
+        let () = asserts <- 0 in
+        let () = errors <- 0 in
+        let () = testf () in
+        if (!errors) > 0 then
+            abort-with-message (`! FAILED `# ^ (arabic !errors) ^ #` / `# ^ (arabic !asserts) ^ #` tests`)
+        else
+            let () = display-message (`! PASSED `# ^ (arabic !asserts) ^ #` tests`) in
+            % Create an blank page
+            let bc = read-block (get-initial-context 400pt (command \math)) '< > in
+            let pagecontf _ = (| text-height = 650pt; text-origin = (100pt, 100pt); |) in
+            let pagepartsf _ = (|
+                header-origin  = (0pt, 0pt);
+                header-content = block-nil;
+                footer-origin  = (0pt, 0pt);
+                footer-content = block-nil;
+            |) in
+            page-break A4Paper pagecontf pagepartsf bc
+
+    let assert msg b =
+        let () = asserts <- (!asserts) + 1 in
+        if b then
+            display-message (`!   `# ^ (arabic !asserts) ^ #` assertion PASS : `# ^ msg)
+        else
+            let () = errors <- (!errors) + 1 in
+            display-message (`!   `# ^ (arabic !asserts) ^ #` assertion FAIL : `# ^ msg)
+
+    let assert-eq equalf showf msg e1 e2 =
+        let b = equalf e1 e2 in
+        let () = assert msg b in
+        if b then () else
+            showf `!      e1 = `# e1 before
+            showf `!      e2 = `# e2
+
+    let assert-eq-float = assert-eq (=.) display-float
+    let assert-eq-length = assert-eq (=') display-length
+    let assert-eq-point = assert-eq (=..) display-point
+    let assert-eq-int = assert-eq (==) display-int
+
+end

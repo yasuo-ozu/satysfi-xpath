@@ -1,0 +1,20 @@
+@import: ../src/util
+@import: ../src/curve
+@import: test
+
+open XPathUtil
+open TestUtil
+
+let run-test-curve () = assert `fail` true in
+
+run-test (fun () -> XPathCurve.(
+    let c1 = ((0cm, 0cm), (0cm, 0cm), (3cm, 3cm), (3cm, 3cm)) |> from-controls in
+    let c2 = ((1cm, 2.5cm), (1cm, 2.5cm), (3cm, 3cm), (3cm, 3cm)) |> from-controls in
+    let res = get-intersects 1pt c1 c2 in
+    %res |> display-list `debug` (display-point)
+    res |> List.iter(fun(u, v)->(
+        assert `u` (float-abs (u -. 1.0) <. eps) before
+        assert `v` (float-abs (v -. 1.0) <. eps)
+    ))  before ()
+))
+
