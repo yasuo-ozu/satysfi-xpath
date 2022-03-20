@@ -47,15 +47,13 @@ end = struct
 
     let get-first-curve lst =
         match lst with
-        | [] -> display-message `ERROR in get-last-inv-curve` before
-              XPathCurve.nil
+        | [] -> abort-with-message `ERROR in get-last-inv-curve`
         | item :: _ -> item
 
 
     let-rec get-last-inv-curve lst =
         match lst with
-        | [] -> display-message `ERROR in get-last-inv-curve` before
-              XPathCurve.nil
+        | [] -> abort-with-message `ERROR in get-last-inv-curve`
         | item :: [] -> XPathCurve.inverse item
         | _ :: lst -> get-last-inv-curve lst
 
@@ -75,12 +73,10 @@ end = struct
         )) in
         let alst = match alst with
         | [] -> [0.]
-        | at :: [] -> display-message `ERROR in point-in-field` before
-              [float-mod (at +. pi) (2. *. pi)]
+        | at :: [] -> abort-with-message `ERROR in point-in-field`
         | _ -> (
               match (alst |> float-sort) with
-              | [] -> display-message `ERROR in point-in-field` before
-                    [0.]
+              | [] -> abort-with-message `ERROR in point-in-field`
               | at0 :: alst ->
                     let (res, at) = alst |> List.fold-left (fun (acc, at0) at -> (
                         ((at +. at0) /. 2.) :: acc,
@@ -155,7 +151,7 @@ end = struct
 
 
     let-rec get-edge-points lst = match lst with
-        | [] -> display-message `ERROR in get-points` before ((0pt, 0pt), (0pt, 0pt))
+        | [] -> abort-with-message `ERROR in get-points`
         | c::[] -> XPathCurve.get-edges c
         | c::cs ->
               let (_, pe) = get-edge-points cs in
@@ -182,17 +178,9 @@ end = struct
                       else
                           let (cs2, lst0) = impl-inner p-end pe lst in
                           match cs2 with
-                          | [] -> display-message `ERROR in into-closed-curves` before ([], lst)
+                          | [] -> abort-with-message `ERROR in into-closed-curves`
                           | _ -> (List.append cs cs2, lst0)
                 )
             in
             let (cs, lst) = impl-inner p p lst in
-
-
-                      
-
-
-
-
-
 end

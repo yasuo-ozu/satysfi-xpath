@@ -8,8 +8,6 @@ type curve = XPathCurve.t
 
 % representation of connected list of curves
 module XPathRail : sig
-    val run-debug : unit -> unit
-
     type t
     type loc
     val nil : t
@@ -121,8 +119,7 @@ end = struct
                   c::(impl c cs)
         in
         match cs with
-        | [] -> display-message `ERROR in set-edge` before
-              (pa, pe, cs)
+        | [] -> abort-with-message `ERROR in set-edge`
         | c::cs ->
               let (_, p1, p2, p3) = XPathCurve.as-controls c in
               let cs = impl (XPathCurve.from-controls (pa, p1, p2, p3)) cs in
@@ -176,8 +173,7 @@ end = struct
                       let (p, cs1, cs2) = impl (i - 1) rcs in
                       (p, c::cs1, cs2)
             )
-            | [] -> display-message `ERROR bad index i in split-at` before
-                  ((0pt, 0pt), [], [])
+            | [] -> abort-with-message `ERROR bad index i in split-at`
         in
         let (p, cs1, cs2) = impl i cs in
         ((pa1, p, cs1), (p, pe2, cs2))
@@ -206,8 +202,7 @@ end = struct
                                         let (cs, pe) = impl2 (d - 1) rcs in
                                         (c::cs, pe)
                               )
-                              | [] -> display-message `ERROR bad jndex i in split-span` before
-                                   ([], (0pt, 0pt))
+                              | [] -> abort-with-message `ERROR bad jndex i in split-span`
                           in
                           let (_, c) = XPathCurve.split-at u c in
                           let (cs, pe) = impl2 d rcs in
@@ -216,8 +211,7 @@ end = struct
                   else
                       impl (i - 1) rcs
             )
-            | [] -> display-message `ERROR bad index i in split-at` before
-                  ((0pt, 0pt), (0pt, 0pt), [])
+            | [] -> abort-with-message `ERROR bad index i in split-span`
         in
         impl i cs
 
@@ -402,8 +396,7 @@ end = struct
     let loc-to-pos delta (_, _, cs) (i, p, _) =
         let-rec impl i len cs =
             match cs with
-            | [] -> display-message `ERROR in loc-to-pos` before
-                  (XPathCurve.nil, 0pt, 0pt)
+            | [] -> abort-with-message `ERROR in loc-to-pos`
             | c::cs ->
                   if i == 0 then
                       let l = (c::cs) |>  List.fold-left (fun len c -> (
@@ -425,8 +418,7 @@ end = struct
         let len = len *' p in
         match get-rough-loc-from-length delta len rail with
         | Some(l) -> l
-        | None -> display-message `ERROR in pos-to-loc` before
-              (0, 0., point-nil)
+        | None -> abort-with-message `ERROR in pos-to-loc`
 
 
     let loc-to-len delta (i, u, _) (_, _, cs) =
@@ -437,7 +429,6 @@ end = struct
                 let l = XPathCurve.get-rough-length delta c in
                 l +' impl (i - 1) cs
             ) else (
-                let () = display-float `flo` u in
                 let (cc, _) = XPathCurve.split-at u c in
                 let l = XPathCurve.get-rough-length delta cc in
                 l
@@ -458,7 +449,7 @@ end = struct
 
     let get-touchstone (_, _, cs) =
         let p = match cs with
-        | [] -> display-message `ERROR in get-touchstone` before point-nil
+        | [] -> abort-with-message `ERROR in get-touchstone`
         | c::_ -> XPathCurve.get-point 0.5 c
         in
         (0, 0.5, p)
@@ -466,7 +457,7 @@ end = struct
 
     let get-derivative (i, u, _) (_, _, cs) =
         match (List.nth i cs) with
-        | None -> display-message `ERROR in get-derivative` before point-nil
+        | None -> abort-with-message `ERROR in get-derivative`
         | Some(c) -> XPathCurve.get-derivative u c
 
     
@@ -481,19 +472,27 @@ end = struct
 
 
     let len-to-loc delta len (_, _, cs) =
-        let-rec impl i cs len =
-            match cs with
-            | c::cs ->
-                  let (len, u) = XPathCurve.len-to-pos delta len c in
-                  if len >' 0pt then
-                      impl (i + 1) cs len
-                  else
-                      let p = XPathCurve.get-point u c in
-                      (i, u, p)
-            | [] ->
-                  (-1, 0. /. 0., point-nil)
+        let-rec impl i c cs len =
+          let (len, u) = XPathCurve.len-to-pos delta len c in
+          if len >' 0pt then
+              match cs with
+              | nc::ncs -> impl (i + 1) nc ncs len
+              | [] ->
+                let (_, pe) = XPathCurve.as-edges c in
+                (i, 1., pe)
+          else
+              let p = XPathCurve.get-point u c in
+              (i, u, p)
         in
-        impl 0 cs len
+        match cs with
+        | c::cs -> (
+            if len <' 1pt *' eps then
+                let (pa, _) = XPathCurve.as-edges c in
+                (0, 0.0, pa)
+            else
+                impl 0 c cs len
+        )
+        | [] -> abort-with-message `ERROR in len-to-loc`
 
 
     let offset l (pa, pe, cs) =
@@ -531,37 +530,4 @@ end = struct
             in
             (p0, p1, p2, p3) |> XPathCurve.from-controls
         )))
-
-
-    let run-debug () = ()
-        % let rail1 =
-        %     XPathCurve.from-controls ((4cm, -1cm), (4cm, 1cm), (2cm, 3cm), (2cm, 3cm))
-        %     |> from-curve
-        %     |> line-to (0cm, -1cm)
-        %     |> line-to (-2cm, 3cm)
-        %     |> line-to (-4cm, -1cm)
-        % in
-        % let rail2 = 
-        %     XPathCurve.from-controls ((-4cm, 0cm), (-4cm, 0cm), (-2cm, 2cm), (0cm, 2cm))
-        %     |> from-curve
-        %     |> bezier-to (2cm, 2cm) (4cm, 0cm) (4cm, 0cm)
-        % in
-        % let (ls2, ls1) = get-cross 0.001cm rail2 rail1 in
-        % let () = display-message `rail1` in
-        % let () = ls1 |> List.map (fun (i, u, p) -> (
-        %     `(` ^ (arabic i) ^ `, `# ^ (show-float u) ^ `, `# ^ (show-point p) ^ `) `#
-        % )) |> List.fold-left (^) ` ` |> display-message in
-        % let () = display-message `rail2` in
-        % let () = ls2 |> List.map (fun (i, u, p) -> (
-        %     `(` ^ (arabic i) ^ `, `# ^ (show-float u) ^ `, `# ^ (show-point p) ^ `) `#
-        % )) |> List.fold-left (^) ` ` |> display-message in
-        % let p = (0pt, 0pt) in
-        % migrate-locations
-        %     [(1, 0.3, p); (1, 0.7, p); (3, 0.5, p)]
-        %     [(1, 0.2, p); (1, 0.5, p); (1, 0.7, p); (1, 0.8, p); (2, 0.5, p); (3, 0.2, p); (3, 0.5, p); (3, 0.7, p)]
-        % |> List.fold-left (fun str (i, u, _) -> (
-        %     str ^ `(` ^ (arabic i) ^ `, `# ^ (show-float u) ^ `) `#
-        % )) ` ` |> display-message
-
-
 end

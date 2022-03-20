@@ -123,8 +123,7 @@ end = struct
                   start-path p0 |> impl lst
         in
         match pat with
-        | [] -> display-message `ERROR in to-embedded-path` before
-              start-path (0pt, 0pt) |> terminate-path
+        | [] -> abort-with-message `ERROR in to-embedded-path`
         | pp0::pps -> pps |> List.fold-left (fun ret pp -> (
               impl-outer pp |> unite-path ret
         )) (impl-outer pp0)

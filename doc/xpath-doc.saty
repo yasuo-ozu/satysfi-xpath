@@ -9,23 +9,31 @@
 @import: ../src/util
 % @import: ../src/visualizer
 
-let-inline ctx \test-path gs =
+let-inline ctx \test-path m gs =
     let bboxs = gs |> List.map get-graphics-bbox in
     let ((x1, y1), (x2, y2)) = match gs with
         | [] -> ((0pt, 0pt), (0pt, 0pt))
         | g::gs -> gs |> List.fold-left (fun ret g -> (
-              get-graphics-bbox g |> concat-bbox ret
+              let (bb1, bb2) = get-graphics-bbox g in
+              concat-bbox ret (bb1,bb2)
         )) (get-graphics-bbox g)
     in
-    let w = x2 -' x1 in
-    let h = y2 -' y1 in
+    let b = 0.1pt in
+    let m = m +' (b *' 0.5) in
+    let w = x2 -' x1 +' (m *' 2.0) in
+    let h = y2 -' y1 +' (m *' 2.0) in
     inline-graphics w h 0pt (fun (x, y) -> (
-        gs |> List.map (shift-graphics (x -' x1, y -' y1))
+        (
+            start-path (x, y) |> line-to (x +' w, y)
+            |> line-to (x +' w, y +' h) |> line-to (x, y +' h)
+            |> close-with-line |> stroke 1pt Color.black
+        )::(
+            gs |> List.map (shift-graphics (x -' x1 +' m, y -' y1 +' m))
+        )
     ))
-in
 
-let () = XPathCurve.run-debug () in
-let () = XPathRail.run-debug () in
+let-block +test-path m gs = '< +p { \test-path(m)(gs); } >
+
 let ctx = get-initial-context 16pt (command \math) in
 document (|
   title = {XPath パッケージ};
@@ -59,27 +67,30 @@ XPath.dashed-stroke : length -> length * length * length -> color -> XPath.t -> 
              ```);
          >
          +section{例}<
+             +p {
+                 以下のコードは、簡単な図形描画の例です．(\SATySFi;組み込みのコマンドを使った場合と同様の結果が得られる。)
+             }
              +code(```
 XPath.(
-    start-path (0pt, 0pt)
-    |> line-to (2cm, 2cm)
-    |> close-with-bezier (2cm, 0cm) (2cm, 0cm)
-    |> stroke 5pt (Color.blue)
+    start-path (0cm, 0cm)
+        |> bezier-to (0cm, 1.1cm) (-2cm, 1.1cm) (-2cm, 0cm)
+        |> line-to (0cm, -2cm) |> line-to (2cm, 0cm)
+        |> close-with-bezier (2cm, 1.1cm) (0cm, 1.1cm)
+        |> stroke 3pt (Color.red)
 )
             ```);
-            +p {
-                とすると、\test-path(
-                    [
-                        XPath.(
-                            start-path (0pt, 0pt)
-                                |> line-to (2cm, 2cm)
-                                |> close-with-bezier (2cm, 0cm) (2cm, 0cm)
-                                |> stroke 5pt (Color.blue)
-                        )
-                    ]
-                );となります。
-            }
-
+            +p { この出力は以下のようになります。 }
+            +test-path(1.5pt)(
+                [
+                    XPath.(
+                        start-path (0cm, 0cm)
+                            |> bezier-to (0cm, 1.1cm) (-2cm, 1.1cm) (-2cm, 0cm)
+                            |> line-to (0cm, -2cm) |> line-to (2cm, 0cm)
+                            |> close-with-bezier (2cm, 1.1cm) (0cm, 1.1cm)
+                            |> stroke 3pt (Color.red)
+                    )
+                ]
+            );
          >
          +section{組み込み型との変換}<
              +p {
@@ -111,8 +122,32 @@ XPath.get-intersections-with : length -> XPath.pre -> XPath.t -> point list
                  * \code(`get-intersections-with delta ppat pat `);${\cdots}与えられた未完パス\code(`ppat`);がパス\code(`pat`);と交わる点のリストを得ます。得られる点列は\code(`ppat`);上で順番になっています。
              }
              +p {
-                 例えば、以下のコード
+                 例えば、以下の図は黒線で示されるパス\code(`pat`);及び青線で示される未完パス\code(`ppat`);が与えられた時に、これらの交点(黄色)を\code(`get-intersections-with`);コマンドで取得する例です。このとき得られる交点の配列は、未完パス\code(`ppat`);上での順になっています(わかりやすいように番号を表示しています)。
              }
+             +test-path(1pt)(
+                 let pat = XPath.(
+                     start-path (4cm, -1cm) |> line-to (2cm, 3cm)
+                     |> line-to (0cm, -1cm) |> line-to (-2cm, 3cm)
+                     |> line-to (-4cm, -1cm) |> terminate-path
+                 ) in
+                 let ppat = XPath.(
+                     start-path (-4cm, 0cm)
+                     |> bezier-to (-4cm, 0cm) (-2cm, 2cm) (0cm, 2cm)
+                     |> bezier-to (2cm, 2cm) (4cm, 0cm) (4cm, 0cm)
+                 ) in
+                 let pts = XPath.get-intersections-with 0.01cm ppat pat in
+                 let labels = pts |> List.mapi (fun i p -> (
+                     [
+                         Gr.circle p 0.2cm |> fill (Color.yellow);
+                         arabic i |> embed-string |> read-inline ctx |> draw-text p
+                     ]
+                 )) |> List.concat in
+                 List.append [
+                     pat |> XPath.stroke 1pt (Color.blue);
+                     ppat |> XPath.terminate-path |> XPath.stroke 1pt (Color.black);
+                 ] labels
+             );
+             +p {コードを以下に示します。}
              +code(```
 let pat = XPath.(
     start-path (4cm, -1cm) |> line-to (2cm, 3cm)
@@ -124,99 +159,54 @@ let ppat = XPath.(
     |> bezier-to (-4cm, 0cm) (-2cm, 2cm) (0cm, 2cm)
     |> bezier-to (2cm, 2cm) (4cm, 0cm) (4cm, 0cm)
 ) in
-let pts = XPath.get-intersections-with 0.001cm ppat pat in
+let pts = XPath.get-intersections-with 0.01cm ppat pat in
 let labels = pts |> List.mapi (fun i p -> (
-    let () = show-point p |> display-message in
     [
         Gr.circle p 0.2cm |> fill (Color.yellow);
         arabic i |> embed-string |> read-inline ctx |> draw-text p
     ]
 )) |> List.concat in
-XPath.(
-    List.append [
-        pat |> stroke 1pt (Color.blue);
-        ppat |> terminate-path |> stroke 1pt (Color.black);
-    ] labels
-)
+List.append [
+    pat |> XPath.stroke 1pt (Color.blue);
+    ppat |> XPath.terminate-path |> XPath.stroke 1pt (Color.black);
+] labels
              ```);
              +p {
-                 は以下のように表示されます。このとき、図中の番号(すなわち\code(`get-intersections-with`);が交点を出力する順番)は与えられた\code(`XPath.pre`);(図の曲線右向き)と同じ順番で表示されていることを確認してください。
+                 一方で\code(`get-intersections`);を用いることにより、パス\code(`pat`);の内部の交点(すなわち自分自身との交点)を得ることができます。この場合に得られる交点の配列の順番は非自明です。
              }
-             +p {
-                 \test-path(
-                     let pat = XPath.(
-                         start-path (4cm, -1cm) |> line-to (2cm, 3cm)
-                         |> line-to (0cm, -1cm) |> line-to (-2cm, 3cm)
-                         |> line-to (-4cm, -1cm) |> terminate-path
-                     ) in
-                     let ppat = XPath.(
-                         start-path (-4cm, 0cm)
-                         |> bezier-to (-4cm, 0cm) (-2cm, 2cm) (0cm, 2cm)
-                         |> bezier-to (2cm, 2cm) (4cm, 0cm) (4cm, 0cm)
-                     ) in
-                     let pts = XPath.get-intersections-with 0.001cm ppat pat in
-                     let labels = pts |> List.mapi (fun i p -> (
-                         let () = show-point p |> display-message in
-                         [
-                             Gr.circle p 0.2cm |> fill (Color.yellow);
-                             arabic i |> embed-string |> read-inline ctx |> draw-text p
-                         ]
-                     )) |> List.concat in
-                     XPath.(
-                         List.append [
-                             pat |> stroke 1pt (Color.blue);
-                             ppat |> terminate-path |> stroke 1pt (Color.black);
-                         ] labels
-                     )
-                 );
-             }
-             +p {
-                 また、\code(`get-intersections`);の例を示します。
-             }
+             +test-path(1pt)(
+                 let pat = XPath.(
+                     [2.; 4.; 1.; 3.] |> List.fold-left (fun pp r -> (
+                         let theta = r *. 6.28 /. 5. +. 1.57 in
+                         pp |> line-to (2cm *' (cos theta), 2cm *' (sin theta))
+                     )) (start-path (0cm, 2cm)) |> close-with-line
+                 ) in
+                 let pts = XPath.get-intersections 0.01cm pat in
+                 let labels = pts |> List.mapi (fun i p -> (
+                     [
+                         Gr.circle p 0.2cm |> fill (Color.yellow);
+                         arabic i |> embed-string |> read-inline ctx |> draw-text p
+                     ]
+                 )) |> List.concat in
+                 (pat |> XPath.stroke 1pt (Color.blue))::labels
+             );
+             +p { コードを以下に示します。 }
              +code(```
- let pat = XPath.(
-     start-path (4cm, 0pt) |> line-to (-3.2cm, 1.8cm)
-     |> line-to (1.2cm, -4cm) |> line-to (1.2cm, 4cm)
-     |> line-to (-3.2cm, -1.8cm) |> close-with-line
- ) in
- let pts = XPath.get-intersections 0.001cm pat in
- let labels = pts |> List.mapi (fun i p -> (
-     let () = show-point p |> display-message in
-     [
-         Gr.circle p 0.2cm |> fill (Color.yellow);
-         arabic i |> embed-string |> read-inline ctx |> draw-text p
-     ]
- )) |> List.concat in
- XPath.(
-     List.append [
-         pat |> stroke 1pt (Color.blue);
-     ] labels
- )
+                 let pat = XPath.(
+                     [2.; 4.; 1.; 3.] |> List.fold-left (fun pp r -> (
+                         let theta = r *. 6.28 /. 5. +. 1.57 in
+                         pp |> line-to (2cm *' (cos theta), 2cm *' (sin theta))
+                     )) (start-path (0cm, 2cm)) |> close-with-line
+                 ) in
+                 let pts = XPath.get-intersections 0.01cm pat in
+                 let labels = pts |> List.mapi (fun i p -> (
+                     [
+                         Gr.circle p 0.2cm |> fill (Color.yellow);
+                         arabic i |> embed-string |> read-inline ctx |> draw-text p
+                     ]
+                 )) |> List.concat in
+                 (pat |> XPath.stroke 1pt (Color.blue))::labels
              ```);
-             +p {
-                 \test-path(
-                     let pat = XPath.(
-                         start-path (4cm, 0pt) |> line-to (-3.2cm, 1.8cm)
-                         |> line-to (1.2cm, -4cm) |> line-to (1.2cm, 4cm)
-                         |> line-to (-3.2cm, -1.8cm) |> close-with-line
-                     ) in
-                     let pts = XPath.get-intersections 0.001cm pat in
-                     let labels = pts |> List.mapi (fun i p -> (
-                         let () = show-point p |> display-message in
-                         [
-                             Gr.circle p 0.2cm |> fill (Color.yellow);
-                             arabic i |> embed-string |> read-inline ctx |> draw-text p
-                         ]
-                     )) |> List.concat in
-                     XPath.(
-                         List.append [
-                             pat |> stroke 1pt (Color.blue);
-                         ] labels
-                     )
-                 );
-
-             }
-
          >
          +section{長さに関するコマンド} <
              +p {
@@ -237,53 +227,74 @@ XPath.split : length -> length -> pre -> pre * pre
                  * \code(`split delta len ppat`);${\cdots}与えられた未完パス\code(`ppat`);を長さ\code(`len`);の位置で分割します。
              }
              +p {
-                 例えば、
+                 以下の例では、円形の未完パス\code(`ppat`);が与えられた時に、\code(`get-rough-length`);を用いてその長さを取得し、その長さを6等分した値を用いて\code(`split`);を用いてパスを分割します。わかりやすさのために各パス片を青と赤に色分けし、間に隙間をいれています。
              }
-             +code(```
- let ppat = XPath.(
-     start-path (-4cm, 0pt)
-     |> bezier-to (-4cm, 2.8cm) (-2.8cm, 4cm) (0pt, 4cm)
-     |> bezier-to (2.8cm, 4cm) (4cm, 2.8cm) (4cm, 0pt)
-     |> bezier-to (4cm, -2.8cm) (2.8cm, -4cm) (0pt, -4cm)
-     |> bezier-to (-2.8cm, -4cm) (-4cm, -2.8cm) (-4cm, 0pt)
- ) in
- let len = XPath.get-rough-length 0.001cm ppat in
- let n = 8 in
- range-span 0. 1. n |> List.mapi (fun i (a, b) -> (
-    let (_, ppat) = ppat |> XPath.split 0.01cm (len *' a) in
-    let (ppat, _) = ppat |> XPath.split 0.01cm (len *' (b -. a)) in
-    let clr = if i mod 2 == 0 then Color.red else Color.blue in
-    ppat |> XPath.terminate-path |> XPath.stroke 5pt clr
- ))
-             ```);
-             +p {
-                 は
-                 \test-path(
-                     let ppat = XPath.(
-                         start-path (-4cm, 0pt)
-                         |> bezier-to (-4cm, 2.8cm) (-2.8cm, 4cm) (0pt, 4cm)
-                         |> bezier-to (2.8cm, 4cm) (4cm, 2.8cm) (4cm, 0pt)
-                         |> bezier-to (4cm, -2.8cm) (2.8cm, -4cm) (0pt, -4cm)
-                         |> bezier-to (-2.8cm, -4cm) (-4cm, -2.8cm) (-4cm, 0pt)
-                     ) in
-                     let len = XPath.get-rough-length 0.001cm ppat in
-                     let n = 8 in
-                     range-span 0. 1. n |> List.mapi (fun i (a, b) -> (
-                        let (_, ppat) = ppat |> XPath.split 0.01cm (len *' a) in
-                        let (ppat, _) = ppat |> XPath.split 0.01cm (len *' (b -. a)) in
-                        let clr = if i mod 2 == 0 then Color.red else Color.blue in
-                        ppat |> XPath.terminate-path |> XPath.stroke 5pt clr
-                     ))
-                 );
-                 と表示されます。また、
-             }
+             +test-path(2.5pt)(
+                 let ppat = XPath.(
+                     start-path (-2cm, 0pt)
+                     |> bezier-to (-2cm, 1.1cm) (-1.1cm, 2cm) (0cm, 2cm)
+                     |> bezier-to (1.1cm, 2cm) (2cm, 1.1cm) (2cm, 0cm)
+                     |> bezier-to (2cm, -1.1cm) (1.1cm, -2cm) (0cm, -2cm)
+                     |> bezier-to (-1.1cm, -2cm) (-2cm, -1.1cm) (-2cm, 0pt)
+                 ) in
+                 let len = XPath.get-rough-length 0.01cm ppat in
+                 let m = 0.1cm in
+                 let slen = len *' (1. /. 6.) -' m in
+                 let (_, gs) = [0; 1; 2; 3; 4; 5] |> List.fold-right (fun i (acc, gs)  -> (
+                    let (pp, acc) = acc |> XPath.split 0.01cm slen in
+                    let (_, acc) = acc |> XPath.split 0.01cm m in
+                    let clr = if i mod 2 == 0 then Color.red else Color.blue in
+                    let g = pp |> XPath.terminate-path |> XPath.stroke 5pt clr in
+                    (acc, g::gs)
+                 )) (ppat, []) in gs
+             );
+             +p { この出力は以下のコードで得られます。 }
              +code(```
 let ppat = XPath.(
-    start-path (0pt, 0pt)
-    |> bezier-to (1cm, -2cm) (1cm, 3cm) (2cm, 2cm)
-    |> bezier-to (4cm, 4cm) (5cm, -2cm) (6cm, 0cm)
+    start-path (-2cm, 0pt)
+    |> bezier-to (-2cm, 1.1cm) (-1.1cm, 2cm) (0cm, 2cm)
+    |> bezier-to (1.1cm, 2cm) (2cm, 1.1cm) (2cm, 0cm)
+    |> bezier-to (2cm, -1.1cm) (1.1cm, -2cm) (0cm, -2cm)
+    |> bezier-to (-1.1cm, -2cm) (-2cm, -1.1cm) (-2cm, 0pt)
 ) in
-let p = (3cm, 0cm) in
+let len = XPath.get-rough-length 0.01cm ppat in
+let m = 0.1cm in
+let slen = len *' (1. /. 6.) -' m in
+let (_, gs) = [0; 1; 2; 3; 4; 5] |> List.fold-right (fun i (acc, gs)  -> (
+    let (pp, acc) = acc |> XPath.split 0.01cm slen in
+    let (_, acc) = acc |> XPath.split 0.01cm m in
+    let clr = if i mod 2 == 0 then Color.red else Color.blue in
+    let g = pp |> XPath.terminate-path |> XPath.stroke 5pt clr in
+    (acc, g::gs)
+)) (ppat, []) in gs
+             ```);
+             +p {
+                 \code(`get-projection-length`);を使用した例を示します。下図では与えられた未完パス\code(`ppat`);上において、特定の点\code(`p`);から最も近い点の位置を\code(`get-projection-length`);を用いて取得しています。また、\code(`get-point-of-len`);を用いて座標を取得し点\code(`p`);から直線を引いています。またわかりやすいように未完パス\code(`ppat`);を分割し色分けして表示します。
+             }
+             +test-path(1pt)(
+                 let ppat = XPath.(
+                     start-path (0cm, 0cm)
+                         |> bezier-to (0cm, 2cm) (3cm, -1cm) (3cm, 1cm)
+                         |> bezier-to (3cm, 3cm) (6cm, 2cm) (6cm, 4cm)
+                 ) in
+                 let p = (2cm, 3cm) in
+                 let len = XPath.get-projection-length 0.1cm p ppat in
+                 let proj = XPath.get-point-of-len 0.1cm len ppat in
+                 let (ppat1, ppat2) = XPath.split 0.1cm len ppat in
+                 XPath.([
+                     ppat1 |> terminate-path |> stroke 5pt Color.blue;
+                     ppat2 |> terminate-path |> stroke 5pt Color.red;
+                     start-path p |> line-to proj |> terminate-path |> stroke 1pt Color.black
+                 ])
+             );
+             +p {コードを以下に示します。}
+             +code(```
+let ppat = XPath.(
+    start-path (0cm, 0cm)
+        |> bezier-to (0cm, 2cm) (3cm, -1cm) (3cm, 1cm)
+        |> bezier-to (3cm, 3cm) (6cm, 2cm) (6cm, 4cm)
+) in
+let p = (2cm, 3cm) in
 let len = XPath.get-projection-length 0.1cm p ppat in
 let proj = XPath.get-point-of-len 0.1cm len ppat in
 let (ppat1, ppat2) = XPath.split 0.1cm len ppat in
@@ -293,27 +304,6 @@ XPath.([
     start-path p |> line-to proj |> terminate-path |> stroke 1pt Color.black
 ])
              ```);
-             +p{
-                 \test-path(
-                     let ppat = XPath.(
-                         start-path (0pt, 0pt)
-                         |> bezier-to (1cm, -2cm) (1cm, 3cm) (2cm, 2cm)
-                         |> bezier-to (4cm, 4cm) (5cm, -2cm) (6cm, 0cm)
-                     ) in
-                     let p = (3cm, 0cm) in
-                     let len = XPath.get-projection-length 0.1cm p ppat in
-                     let proj = XPath.get-point-of-len 0.1cm len ppat in
-                     let (ppat1, ppat2) = XPath.split 0.1cm len ppat in
-                     XPath.([
-                         ppat1 |> terminate-path |> stroke 5pt Color.blue;
-                         ppat2 |> terminate-path |> stroke 5pt Color.red;
-                         start-path p |> line-to proj |> terminate-path |> stroke 1pt Color.black
-                     ])
-                 );
-             }
-
-
-
          >
         +section{パスの変形}<
             +p {
@@ -324,117 +314,59 @@ XPath.offset : length -> XPath.pre -> XPath.pre
 XPath.offset-path : length -> XPath.t -> XPath.t
              ```);
              +p {
-                 \code(`XPath.offset l ppat`);及び\code(`XPath.offset-path l pat`);はそれぞれ未完パス及びパスを与えられた長さ\code(`l`);分ずらします。長さとして負の値を指定すると、逆方向にずらします。例えば、
+                 \code(`XPath.offset l ppat`);及び\code(`XPath.offset-path l pat`);はそれぞれ未完パス及びパスを与えられた長さ\code(`l`);分左にずらします。長さとして負の値を指定すると、逆方向にずらします。
              }
+            +p {
+                 以下の図は、黒色のパス\code(`pat`);を\code(`1cm`);ずらしたパス(青色)及び\code(`-1cm`);ずらしたパスを描画したものです。
+            }
+             +test-path(5pt)(
+                 let pat = XPath.(
+                     start-path (0cm, 0cm)
+                        |> bezier-to (0cm, 2cm) (3cm, 2cm) (3cm, 0cm)
+                        |> bezier-to (3cm, -2cm) (6cm, -2cm) (6cm, 0cm)
+                        |> terminate-path
+                 ) in
+                 [
+                     (pat, Color.black);
+                     (pat |> XPath.offset-path 1cm, Color.blue);
+                     (pat |> XPath.offset-path -1cm, Color.red);
+                 ] |> List.map (fun (pp, clr) -> (
+                     pp |> XPath.stroke 5pt clr
+                 ))
+             );
+             +p {コードを以下に示します。}
              +code(```
-let ppat = XPath.(
-    start-path (0cm, 0cm)
+let pat = XPath.(
+ start-path (0cm, 0cm)
     |> bezier-to (0cm, 2cm) (3cm, 2cm) (3cm, 0cm)
     |> bezier-to (3cm, -2cm) (6cm, -2cm) (6cm, 0cm)
+    |> terminate-path
 ) in
 [
-    (ppat, Color.black);
-    (ppat |> XPath.offset 1cm, Color.blue);
-    (ppat |> XPath.offset -1cm, Color.red);
-] |> List.map (fun (pp, clr) -> XPath.(
-    pp |> terminate-path |> stroke 5pt clr
+ (pat, Color.black);
+ (pat |> XPath.offset-path 1cm, Color.blue);
+ (pat |> XPath.offset-path -1cm, Color.red);
+] |> List.map (fun (pp, clr) -> (
+ pp |> XPath.stroke 5pt clr
 ))
-            ```);
-            +p {
-                 を表示すると
-            }
-             +p {
-                 \test-path(
-                     let ppat = XPath.(
-                         start-path (0cm, 0cm)
-                            |> bezier-to (0cm, 2cm) (3cm, 2cm) (3cm, 0cm)
-                            |> bezier-to (3cm, -2cm) (6cm, -2cm) (6cm, 0cm)
-                     ) in
-                     [
-                         (ppat, Color.black);
-                         (ppat |> XPath.offset 1cm, Color.blue);
-                         (ppat |> XPath.offset -1cm, Color.red);
-                     ] |> List.map (fun (pp, clr) -> XPath.(
-                         pp |> terminate-path |> stroke 5pt clr
-                     ))
-                 );
-
-             }
+             ```);
 
 
         >
      >
-     +chapter{今後追加する機能}<>
-     +chapter{内部実装}<>
-    % +p {
-    %     \test-path(
-    %         XPath.(
-    %             let p1 = start-path (0cm, -4cm)
-    %                 |> bezier-to (5cm, -4cm) (5cm, 4cm) (0cm, 4cm)
-    %                 |> terminate-path in
-    %             let p2 = start-path (1cm, -4cm)
-    %                 |> line-to (1cm, 4cm)
-    %                 |> terminate-path in
-    %             unite-path p1 p2
-    %         )
-    %     );
-    %     % \test-path(
-    %     %     XPath.(
-    %     %         let p1 = start-path (-2cm, 0cm)
-    %     %             |> bezier-to (-4cm, 2cm) (4cm, 2cm) (4cm, 0cm)
-    %     %             |> terminate-path in
-    %     %         let p2 = start-path (-2.4cm, -0.5cm)
-    %     %             |> line-to (-2.4cm, 2.5cm)
-    %     %             |> terminate-path in
-    %     %         let p3 = start-path (-1.5cm, 1cm)
-    %     %             |> bezier-to (-1cm, 4cm) (1cm, -1cm) (1.5cm, 2cm)
-    %     %             |> terminate-path in
-    %     %         unite-path (unite-path p1 p2) p3
-    %     %     )
-    %     % );
-    %     \test-path(
-    %         XPath.(
-    %             let p1 =
-    %                 start-path (0pt, 0pt)
-    %                 |> line-to (3cm, 3cm)
-    %                 %start-path (3cm, 3cm)
-    %                 |> bezier-to (6cm, 6cm) (3cm, 0cm) (9cm, 6cm)
-    %                 %|> bezier-to (10cm, 9cm) (3cm, 0cm) (5cm, -2cm)
-    %                 %|> close-with-bezier (4cm, -3cm) (1cm, -1cm)
-    %                 |> terminate-path
-    %             in
-    %             let p3 = start-path (3cm, 3cm)
-    %                 |> line-to (0cm, 0cm)
-    %                 |> line-to (9cm, 6cm)
-    %                 |> bezier-to (6cm, 6cm) (3cm, 0cm) (9cm, 6cm)
-    %                 |> terminate-path
-    %             in
-    %             p3
-    %             % let p2 = start-path (1cm, 2.5cm)
-    %             %     |> line-to (8cm, 2.5cm)
-    %             %     |> terminate-path in
-    %             % p2
-    %             %unite-path p1 p2
-    %         )
-    %     );
-    %     % \test-path(
-    %     %     XPath.(
-    %     %         start-path (5.3mm, 1mm)
-    %     %             |> bezier-to (5.3mm, 1mm) (-2mm, 4.7mm) (1.2mm, 13.2mm)
-    %     %             |> bezier-to (4.5mm, 21.6mm) (7.3mm, 3.6mm) (13.5mm, 11.1mm)
-    %     %             |> bezier-to (19.7mm, 18.7mm) (3.3mm, 15.6mm) (2.4mm, 10.6mm)
-    %     %             |> bezier-to (1.5mm, 5.6mm) (39mm, 23.2mm) (29.1mm, 25.1mm)
-    %     %             |> bezier-to (19.12mm, 26.9mm) (11.1mm, 25.8mm) (11.1mm, 25.8mm)
-    %     %             |> line-to (28.3mm, 4.1mm)
-    %     %             |> line-to (14.1mm, 4.8mm)
-    %     %             |> line-to (33.3mm, 32.1mm)
-    %     %             |> line-to (1.9mm, 7.8mm)
-    %     %             |> bezier-to (1.9mm, 7.8mm) (25.7mm, -7.7mm) (21.2mm, -6.7mm)
-    %     %             |> bezier-to (16.8mm, 21.3mm) (23.1mm, 21.7mm) (34.3mm, 21.9mm)
-    %     %             |> bezier-to (45.4mm, 22mm) (14.9mm, -2.2mm) (5.3mm, 1mm)
-    %     %             |> close-with-line
-    %     %     )
-    %     % );
-
-    % }
+     +chapter{今後追加する機能}<
+         +p {
+            以下のような機能を今後追加する予定です。
+         }
+         +listing{
+            * \SATySFi;標準の\code(`gr`);パッケージに相当する機能
+            * 与えられたパスを与えられた未完パスを基準に変形する機能
+            * 与えられたパスのうち、内部のループを削除する機能
+            * 複数のパスの結合、交差、分割を生成する機能
+            * パスと点が与えられた時に、点が塗られる部分に属するか判定する機能
+            * パスと点が与えられた時に、点を取り囲む最小のパスを取得する機能
+            * パスのアウトライン化する機能
+            * ASCII文字に対応するパスを生成する機能
+         }
+     >
 >

@@ -4,8 +4,6 @@ open XPathUtil
 
 module XPathCurve : sig
     type t
-
-    val run-debug : unit -> unit
     
     val nil : t
     val as-controls : t -> point * point * point * point
@@ -569,19 +567,6 @@ end = struct
 %                let pv = get-point v curve in
 %                (pu +.. pv) *.. 0.5
 %            ))
-
-
-    let run-debug () =
-        let () = display-message `begin debug` in
-        let c1 = ((0cm, 0cm), (0cm, 0cm), (3cm, 3cm), (3cm, 3cm)) in
-        let c2 = ((1cm, 2.5cm), (1cm, 2.5cm), (3cm, 3cm), (3cm, 3cm)) in
-        let res = get-intersects 1pt c1 c2 in
-        %res |> display-list `debug` (display-point)
-        res |> List.iter(fun(u, v)->(
-            display-float `u` u before
-            display-float `v` v
-        )) before
-        display-message `end debug`
 
     let get-point-from-curves-and-pos ci cj (u, v) =
         let pu = get-point u ci in
