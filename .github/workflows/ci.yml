@@ -58,13 +58,16 @@ jobs:
           opam install . --with-doc --verbose
 
       - name: Install ghostscript
+        if: matrix.os == "ubuntu-latest"
         run: sudo apt install ghostscript
       - name: Change ImageMagick security policy
+        if: matrix.os == "ubuntu-latest"
         run: |
           DQT='"' 
           SRC="rights=${DQT}none${DQT} pattern=${DQT}PDF${DQT}"
           RPL="rights=${DQT}read\|write${DQT} pattern=${DQT}PDF${DQT}"
           sudo sed -i "s/$SRC/$RPL/" /etc/ImageMagick-6/policy.xml
       - name: Run test
+        if: matrix.os == "ubuntu-latest"
         run: |
           make test SATYSFI_OPTION="-C ./_opam/share/satysfi"
