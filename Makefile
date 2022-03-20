@@ -14,7 +14,7 @@ image-test:	$(patsubst %.saty,%.comp.pdf,$(wildcard image-tests/*.saty))
 
 image-tests/%.comp.pdf:	image-tests/%.pdf image-tests-ans/%.pdf
 	@echo "! BEGIN image test on $<"
-	@[ 1000 -gt $(shell magick compare -metric AE "$<" "$(patsubst image-tests/%,image-tests-ans/%,$<)" "$@" 2>&1 ) ] && echo "$(CL_GREEN)! PASS image test on $<$(CL_RESET)" || (echo "$(CL_RED)!FAILED image test on $<$(CL_RESET)" && false)
+	@[ 1000 -gt $(shell compare -metric AE "$<" "$(patsubst image-tests/%,image-tests-ans/%,$<)" "$@" 2>&1 ) ] && echo "$(CL_GREEN)! PASS image test on $<$(CL_RESET)" || (echo "$(CL_RED)!FAILED image test on $<$(CL_RESET)" && false)
 
 image-tests/%.pdf:	image-tests/%.saty image-tests/test.satyh src
 	@echo "! BEGIN test on $<"
