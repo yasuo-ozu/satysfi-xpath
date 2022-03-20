@@ -67,4 +67,4 @@ jobs:
           sudo sed -i "s/$SRC/$RPL/" /etc/ImageMagick-6/policy.xml
       - name: Run test
         run: |
-          make test
+          make test SATYSFI_OPTION="-C ./_opam/share/satysfi"
