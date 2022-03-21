@@ -6,7 +6,7 @@
   (version "0.2.0")
   (sources
     (
-     (package "xpath.satyh" "./src/xpath.satyh")
+     (packageDir "src")
     )
   )
   (opam "satysfi-xpath.opam")
