@@ -3,10 +3,10 @@
 
 (library
   (name "xpath")
-  (version "0.1.0")
+  (version "0.2.0")
   (sources
     (
-     (package "xpath.satyg" "./src/xpath.satyh")
+     (package "xpath.satyh" "./src/xpath.satyh")
     )
   )
   (opam "satysfi-xpath.opam")
@@ -18,7 +18,7 @@
 
 (libraryDoc
   (name "xpath-doc")
-  (version "0.1.0")
+  (version "0.2.0")
   (workingDirectory "./doc/")
   (build
     (
