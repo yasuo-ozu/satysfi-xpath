@@ -8,6 +8,7 @@ test:	assert-test image-test
 
 lint:
 	@opam exec satyrographos lint
+	ls
 	[ "v$(shell find . -name '*.opam' | xargs cat | sed -ne '/^version:/p' |  sed -e 's/^version:.*"\(.*\)".*$$/\1/' | uniq)" = "$(shell git describe --tags | sed -e 's/-.*$$//')" ]
 
 assert-test:	$(patsubst %.saty,%.pdf,$(wildcard tests/*.saty))
