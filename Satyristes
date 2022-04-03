@@ -28,7 +28,9 @@
   )
   (opam "satysfi-xpath-gr.opam")
   (dependencies
-    ()
+    (
+      (xpath ())
+    )
   )
   (compatibility ())
 )

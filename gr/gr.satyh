@@ -1,0 +1,186 @@
+@require: pervasives
+@require: geom
+@require: list
+@require: gr
+@require: xpath/xpath
+
+% This file is based on satysfi-dist.
+
+module XPathGr : sig
+
+  val rectangle : point -> point -> XPath.t
+  val rectangle-round       : length -> point -> point -> XPath.t
+  val rectangle-round-left  : length -> point -> point -> XPath.t
+  val rectangle-round-left-lower : length -> point -> point -> XPath.t
+  val rectangle-round-left-upper : length -> point -> point -> XPath.t
+  val rectangle-round-right : length -> point -> point -> XPath.t
+  val poly-line : point -> point list -> XPath.t
+  val polygon : point -> point list -> XPath.t
+  val line : point -> point -> XPath.t
+  val circle : point -> length -> XPath.t
+  val text-centering : point -> inline-boxes -> graphics
+  val text-leftward : point -> inline-boxes -> graphics
+  val text-rightward : point -> inline-boxes -> graphics
+  val arrow : length -> color -> length -> length -> length -> point -> point -> graphics list
+  val dashed-arrow : length -> length * length * length -> color -> length -> length -> length -> point -> point -> graphics list
+  val rotate-path : point -> float -> XPath.t -> XPath.t
+  val scale-path : point -> float -> float -> XPath.t -> XPath.t
+  val rotate-graphics : point -> float -> graphics -> graphics
+  val scale-graphics : point -> float -> float -> graphics -> graphics
+
+end = struct
+
+  let rectangle (x1, y1) (x2, y2) =
+      XPath.(
+          start-path (x1, y1)
+              |> line-to (x1, y2)
+              |> line-to (x2, y2)
+              |> line-to (x2, y1)
+              |> close-with-line
+      )
+
+
+  let rectangle-round r (xA, yA) (xB, yB) =
+    let t = r *' 0.4 in
+    let x1 = length-min xA xB in
+    let x2 = length-max xA xB in
+    let y1 = length-min yA yB in
+    let y2 = length-max yA yB in
+    XPath.(
+        start-path                                 (x1, y1 +' r)
+            |> bezier-to (x1, y1 +' t) (x1 +' t, y1) (x1 +' r, y1)
+            |> line-to                               (x2 -' r, y1)
+            |> bezier-to (x2 -' t, y1) (x2, y1 +' t) (x2, y1 +' r)
+            |> line-to                               (x2, y2 -' r)
+            |> bezier-to (x2, y2 -' t) (x2 -' t, y2) (x2 -' r, y2)
+            |> line-to                               (x1 +' r, y2)
+            |> bezier-to (x1 +' t, y2) (x1, y2 -' t) (x1, y2 -' r)
+            |> close-with-line
+    )
+
+
+  let rectangle-round-left r (xA, yA) (xB, yB) =
+    let t = r *' 0.4 in
+    let x1 = length-min xA xB in
+    let x2 = length-max xA xB in
+    let y1 = length-min yA yB in
+    let y2 = length-max yA yB in
+    XPath.(
+        start-path                                 (x1, y1 +' r)
+            |> bezier-to (x1, y1 +' t) (x1 +' t, y1) (x1 +' r, y1)
+            |> line-to                               (x2, y1)
+            |> line-to                               (x2, y2)
+            |> line-to                               (x1 +' r, y2)
+            |> bezier-to (x1 +' t, y2) (x1, y2 -' t) (x1, y2 -' r)
+            |> close-with-line
+    )
+
+
+  let rectangle-round-left-lower r (xA, yA) (xB, yB) =
+    let t = r *' 0.4 in
+    let x1 = length-min xA xB in
+    let x2 = length-max xA xB in
+    let y1 = length-min yA yB in
+    let y2 = length-max yA yB in
+    XPath.(
+        start-path                                 (x1, y1 +' r)
+            |> bezier-to (x1, y1 +' t) (x1 +' t, y1) (x1 +' r, y1)
+            |> line-to                               (x2, y1)
+            |> line-to                               (x2, y2)
+            |> line-to                               (x1, y2)
+            |> close-with-line
+    )
+
+
+  let rectangle-round-left-upper r (xA, yA) (xB, yB) =
+    let t = r *' 0.4 in
+    let x1 = length-min xA xB in
+    let x2 = length-max xA xB in
+    let y1 = length-min yA yB in
+    let y2 = length-max yA yB in
+    XPath.(
+        start-path                                 (x1, y1)
+            |> line-to                               (x2, y1)
+            |> line-to                               (x2, y2)
+            |> line-to                               (x1 +' r, y2)
+            |> bezier-to (x1 +' t, y2) (x1, y2 -' t) (x1, y1 -' t)
+            |> close-with-line
+    )
+
+
+  let rectangle-round-right r (xA, yA) (xB, yB) =
+    let t = r *' 0.4 in
+    let x1 = length-min xA xB in
+    let x2 = length-max xA xB in
+    let y1 = length-min yA yB in
+    let y2 = length-max yA yB in
+    XPath.(
+        start-path                                 (x1, y1)
+            |> line-to                               (x2 -' r, y1)
+            |> bezier-to (x2 -' t, y1) (x2, y1 +' t) (x2, y1 +' r)
+            |> line-to                               (x2, y2 -' r)
+            |> bezier-to (x2, y2 -' t) (x2 -' t, y2) (x2 -' r, y2)
+            |> line-to                               (x1, y2)
+            |> close-with-line
+    )
+
+
+  let poly-line ptinit ptlst =
+    ptlst |> List.fold-left (fun acc pt -> (
+      acc |> XPath.line-to pt
+    )) (XPath.start-path ptinit) |> XPath.terminate-path
+
+
+  let polygon ptinit ptlst =
+    ptlst |> List.fold-left (fun acc pt -> (
+      acc |> XPath.line-to pt
+    )) (XPath.start-path ptinit) |> XPath.close-with-line
+
+
+  let line pt1 pt2 =
+      XPath.(
+          start-path pt1 |> line-to pt2 |> terminate-path
+      )
+
+
+  let circle (cx, cy) r =
+    let t = r *' 0.55228 in
+    XPath.(
+        start-path (cx -' r, cy)
+            |> bezier-to (cx -' r, cy +' t) (cx -' t, cy +' r) (cx, cy +' r)
+            |> bezier-to (cx +' t, cy +' r) (cx +' r, cy +' t) (cx +' r, cy)
+            |> bezier-to (cx +' r, cy -' t) (cx +' t, cy -' r) (cx, cy -' r)
+            |> close-with-bezier (cx -' t, cy -' r) (cx -' r, cy -' t)
+    )
+
+
+  let text-centering = Gr.text-centering
+  let text-rightward = Gr.text-rightward
+  let text-leftward = Gr.text-leftward
+  let arrow = Gr.arrow
+  let dashed-arrow = Gr.dashed-arrow
+
+
+  let rotate-path centpt angle path =
+    let (centx, centy) = centpt in
+    let rad = angle *. math-pi /. 180. in
+    XPath.(
+        path |> shift-path (0pt -' centx, 0pt -' centy)
+             |> linear-transform-path (cos rad) (0. -. (sin rad)) (sin rad) (cos rad)
+             |> shift-path centpt
+    )
+
+
+  let scale-path centpt scalex scaley path =
+    let (centx, centy) = centpt in
+    XPath.(
+        path |> shift-path (0pt -' centx, 0pt -' centy)
+             |> linear-transform-path scalex 0. 0. scaley
+             |> shift-path centpt
+    )
+
+
+  let rotate-graphics = Gr.rotate-graphics
+  let scale-graphics = Gr.scale-graphics
+
+end
