@@ -5,8 +5,8 @@
 @require: color
 @require: math
 
-@import: ../src/xpath
-@import: ../src/util
+@import: ../xpath/xpath
+@import: ../shared/util
 % @import: ../src/visualizer
 
 let-inline ctx \test-path m gs =

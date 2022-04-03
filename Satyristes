@@ -6,10 +6,27 @@
   (version "0.2.0")
   (sources
     (
-     (packageDir "src")
+     (packageDir "xpath")
+     (packageDir "shared")
     )
   )
   (opam "satysfi-xpath.opam")
+  (dependencies
+    ()
+  )
+  (compatibility ())
+)
+
+(library
+  (name "xpath-gr")
+  (version "0.2.0")
+  (sources
+    (
+     (packageDir "gr")
+     (packageDir "shared")
+    )
+  )
+  (opam "satysfi-xpath-gr.opam")
   (dependencies
     ()
   )
