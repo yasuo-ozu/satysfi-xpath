@@ -353,12 +353,37 @@ let pat = XPath.(
 
         >
      >
+     +chapter {\code(`xpath-gr`); の機能} <
+         +p {
+             パッケージ\code(`xpath-gr`);に含まれるモジュール\code(`XPathGr`);は、\SATySFi;標準の\code(`Gr`);モジュールに相当する機能を提供します。シグネチャは\code(`Gr`);モジュールと同等であり、各関数の値のみが\code(`path`);ではなく\code(`XPath.t`);になります。
+         }
+             +code(```
+XPathGr.rectangle : point -> point -> XPath.t
+XPathGr.rectangle-round       : length -> point -> point -> XPath.t
+XPathGr.rectangle-round-left  : length -> point -> point -> XPath.t
+XPathGr.rectangle-round-left-lower : length -> point -> point -> XPath.t
+XPathGr.rectangle-round-left-upper : length -> point -> point -> XPath.t
+XPathGr.rectangle-round-right : length -> point -> point -> XPath.t
+XPathGr.poly-line : point -> point list -> XPath.t
+XPathGr.polygon : point -> point list -> XPath.t
+XPathGr.line : point -> point -> XPath.t
+XPathGr.circle : point -> length -> XPath.t
+XPathGr.text-centering : point -> inline-boxes -> graphics
+XPathGr.text-leftward : point -> inline-boxes -> graphics
+XPathGr.text-rightward : point -> inline-boxes -> graphics
+XPathGr.arrow : length -> color -> length -> length -> length -> point -> point -> graphics list
+XPathGr.dashed-arrow : length -> length * length * length -> color -> length -> length -> length -> point -> point -> graphics list
+XPathGr.rotate-path : point -> float -> XPath.t -> XPath.t
+XPathGr.scale-path : point -> float -> float -> XPath.t -> XPath.t
+XPathGr.rotate-graphics : point -> float -> graphics -> graphics
+XPathGr.scale-graphics : point -> float -> float -> graphics -> graphics
+        ```);
+    >
      +chapter{今後追加する機能}<
          +p {
             以下のような機能を今後追加する予定です。
          }
          +listing{
-            * \SATySFi;標準の\code(`gr`);パッケージに相当する機能
             * 与えられたパスを与えられた未完パスを基準に変形する機能
             * 与えられたパスのうち、内部のループを削除する機能
             * 複数のパスの結合、交差、分割を生成する機能
