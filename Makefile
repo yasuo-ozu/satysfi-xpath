@@ -25,7 +25,7 @@ image-tests/%.pdf:	image-tests/%.saty image-tests/test.satyh src
 	@echo "! BEGIN test on $<"
 	@opam exec satysfi -- $(SATYSFI_OPTION) "$<" | sed -ne '/^!/p' | sed -e 's/^\(.*PASS.*\)$$/$(CL_GREEN)\1$(CL_RESET)/' | sed -e 's/^\(.*FAIL.*\)$$/$(CL_RED)\1$(CL_RESET)/'
 
-tests/%.pdf:	tests/%.saty tests/test.satyh src
+tests/%.pdf:	tests/%.saty tests/test.satyh xpath
 	@echo "! BEGIN test on $<"
 	@opam exec satysfi -- $(SATYSFI_OPTION) "$<" | sed -ne '/^!/p' | sed -e 's/^\(.*PASS.*\)$$/$(CL_GREEN)\1$(CL_RESET)/' | sed -e 's/^\(.*FAIL.*\)$$/$(CL_RED)\1$(CL_RESET)/'
 

@@ -1,6 +1,6 @@
 % Import tests
 
-@import: ../src/util
+@import: ../shared/util
 open XPathUtil
 
 let-inline ctx \math m =

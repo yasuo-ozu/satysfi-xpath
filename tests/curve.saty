@@ -1,5 +1,5 @@
-@import: ../src/util
-@import: ../src/curve
+@import: ../shared/util
+@import: ../xpath/curve
 @import: test
 
 open XPathUtil
