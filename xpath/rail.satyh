@@ -76,6 +76,15 @@ end = struct
     let nil = from-curve (XPathCurve.nil)
 
 
+    let deformate f (pa, pe, cs) =
+        (
+            f pa, f pe,
+            cs |> List.map (fun c -> (
+                let (p0, p1, p2, p3) = XPathCurve.as-controls c in
+                XPathCurve.from-controls (f p0, f p1, f p2, f p3)
+            ))
+        )
+
     let linear-transform (a, b, c, d) (pa, pe, cs) =
         let trans (x, y) =
             (x *' a +' y *' b, x *' c +' y *' d)
