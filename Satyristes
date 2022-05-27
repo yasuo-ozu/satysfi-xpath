@@ -6,8 +6,10 @@
   (version "0.2.0")
   (sources
     (
-     (packageDir "xpath")
-     (packageDir "shared")
+     (package "util.satyh" "./shared/util.satyh")
+     (package "curve.satyh" "./xpath/curve.satyh")
+     (package "rail.satyh" "./xpath/rail.satyh")
+     (package "xpath.satyh" "./xpath/xpath.satyh")
     )
   )
   (opam "satysfi-xpath.opam")

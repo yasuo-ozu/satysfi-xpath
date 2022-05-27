@@ -59,6 +59,7 @@ module XPathRail : sig
     val get-line-intersects : t -> point * point -> loc list
 
     val offset : length -> t -> t
+    val deformate : (point -> point) -> t -> t
 
 end = struct
 

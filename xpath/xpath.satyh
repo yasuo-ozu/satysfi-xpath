@@ -36,7 +36,7 @@ module XPath : sig
     % path transformation functions
     val offset : length -> pre -> pre
     val offset-path : length -> t -> t
-    val deformate-path : pre -> t -> t
+    val deformate-path : length -> pre -> t -> t
     val deformate-path-by-func : (point -> point) -> t -> t
 
     % val outset-path : length -> t -> t
@@ -92,9 +92,9 @@ end = struct
     let deformate-path-by-func f p =
         p |> List.map (fun pp -> (
             match pp with
-            | PrePoint(p0) -> f 0,
-            | PreRail(r) -> r |> XPathRail.deformate f
-        )
+            | PrePoint(p0) -> PrePoint(f p0)
+            | PreRail(r) -> PreRail(XPathRail.deformate f r)
+        ))
 
 
     let to-embedded-prepath pp =
@@ -214,25 +214,6 @@ end = struct
             XPathRail.get-rough-length delta r
 
 
-    let deformate-path delta pp p =
-        let (_, (xmax, _)) = get-path-bbox p in
-        let r = match pp with
-            | PrePoint(_) ->
-                  abort-with-message `deformate-path: invalid prepath is given`
-            | PreRail(r) -> r
-        in
-        let len = XPathRail.get-rough-length delta r in
-        let m = len /' xmax in
-        let f (x, y) = (
-            let x = length-min x 0pt in
-            let l = XPathRail.len-to-loc delta (x *' m) r in
-            let (x1, y1) = XPathRail.loc-to-point l in
-            let (xd, yd) = XPathRail.get-derivative l r
-                |> point-perp |> point-normalize y in
-            (x1 +' xd, y1 +' yd)
-        )
-
-
     % SATySFi compatible APIs
 
     let unite-path = List.append
@@ -312,4 +293,26 @@ end = struct
               let l = XPathRail.len-to-loc delta len r in
               let (r1, r2) = XPathRail.split-at l r in
               (PreRail(r1), PreRail(r2))
+
+    
+    % Other algorisms
+
+    let deformate-path delta pp p =
+        let (_, (xmax, _)) = get-path-bbox p in
+        let r = match pp with
+            | PrePoint(_) ->
+                  abort-with-message `deformate-path: invalid prepath is given`
+            | PreRail(r) -> r
+        in
+        let len = XPathRail.get-rough-length delta r in
+        let m = len /' xmax in
+        let f = fun (x, y) -> (
+            let x = length-max x 0pt in
+            let l = XPathRail.len-to-loc delta (x *' m) r in
+            let (x1, y1) = XPathRail.loc-to-point l in
+            let (xd, yd) = XPathRail.get-derivative l r
+                |> point-perp |> point-normalize y in
+            (x1 +' xd, y1 +' yd)
+        ) in
+        deformate-path-by-func f p
 end

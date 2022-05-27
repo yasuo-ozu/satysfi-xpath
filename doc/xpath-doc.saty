@@ -216,6 +216,7 @@ XPath.get-rough-length : length -> XPath.pre -> length
 XPath.get-point-of-len : length -> length -> pre -> point
 XPath.get-projection : length -> point -> pre -> point
 XPath.get-projection-length : length -> point -> pre -> length
+XPath.get-derivative : length -> length -> pre -> point
 XPath.split : length -> length -> pre -> pre * pre
              ```);
              +listing{
@@ -223,6 +224,7 @@ XPath.split : length -> length -> pre -> pre * pre
                  * \code(`get-point-of-len delta len ppat`);${\cdots}与えられた未完パス\code(`ppat`);上で始点から長さ\code(`len`);の地点を取得します。
                  * \code(`get-projection delta p ppat`);${\cdots}与えられた未完パス\code(`ppat`);上で与えられた点\code(`p`);に最も近い点を取得します。
                  * \code(`get-projection-length delta p ppat`);${\cdots}与えられた未完パス\code(`ppat`);上で与えられた点\code(`p`);に最も近い点の位置を表す長さを取得します。
+                 * \code(`get-derivative delta len ppat`);${\cdots}与えられた未完パス\code(`ppat`);上で位置により与えられた点\code(`len`);上での未完パスの微分をベクトルとして取得します。
                  * \code(`split delta len ppat`);${\cdots}与えられた未完パス\code(`ppat`);を長さ\code(`len`);の位置で分割します。
              }
              +p {
