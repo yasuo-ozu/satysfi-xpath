@@ -313,6 +313,8 @@ XPath.([
              +code(```
 XPath.offset : length -> XPath.pre -> XPath.pre
 XPath.offset-path : length -> XPath.t -> XPath.t
+XPath.deformate-path : length -> pre -> XPath.t -> XPath.t
+XPath.deformate-path-by-func : (point -> point) -> XPath.t -> XPath.t
              ```);
              +p {
                  \code(`XPath.offset l ppat`);及び\code(`XPath.offset-path l pat`);はそれぞれ未完パス及びパスを与えられた長さ\code(`l`);分左にずらします。長さとして負の値を指定すると、逆方向にずらします。
@@ -351,8 +353,94 @@ let pat = XPath.(
  pp |> XPath.stroke 5pt clr
 ))
              ```);
-
-
+             +p {
+                 \code(`deformate-path-by-func f p`);を用いると、与えられた関数\code(`f: point -> point`);を用いてパス\code(`p`);を変形することができます。これは\code(`linear-transform-path`);の一般化です。例えば以下は関数\code(`(x, y) -> (x, y *' (x *' 0.5)')`);を用いて黒いパスを青いパスに変形する例です。
+             }
+             +code(```
+ XPath.(
+     let f = fun (x, y) -> (x, y +' (x *' 0.5)) in
+     let p = start-path (0pt, 0pt)
+        |> bezier-to (0cm, 1cm) (1cm, 1cm) (1cm, 0cm)
+        |> bezier-to (1cm, -1cm) (2cm, -1cm) (2cm, 0cm)
+        |> bezier-to (2cm, 1cm) (3cm, 1cm) (3cm, 0cm)
+        |> bezier-to (3cm, -1cm) (4cm, -1cm) (4cm, 0cm)
+        |> bezier-to (4cm, 1cm) (5cm, 1cm) (5cm, 0cm)
+        |> terminate-path
+     in
+     [
+         p |> stroke 2pt (Color.black);
+         p |> deformate-path-by-func f |> stroke 2pt (Color.blue)
+     ]
+ )
+             ```);
+             +p {
+                 は以下のグラフィックを出力します。
+             }
+             +test-path (5pt) (
+                 XPath.(
+                     let f = fun (x, y) -> (x, y +' (x *' 0.5)) in
+                     let p = start-path (0pt, 0pt)
+                        |> bezier-to (0cm, 1cm) (1cm, 1cm) (1cm, 0cm)
+                        |> bezier-to (1cm, -1cm) (2cm, -1cm) (2cm, 0cm)
+                        |> bezier-to (2cm, 1cm) (3cm, 1cm) (3cm, 0cm)
+                        |> bezier-to (3cm, -1cm) (4cm, -1cm) (4cm, 0cm)
+                        |> bezier-to (4cm, 1cm) (5cm, 1cm) (5cm, 0cm)
+                        |> terminate-path
+                     in
+                     [
+                         p |> stroke 2pt (Color.black);
+                         p |> deformate-path-by-func f |> stroke 2pt (Color.blue)
+                     ]
+                 )
+             );
+             +p {
+                 \code(`deformate-path delta pp p`);を用いると、与えられた未完パス\code(`pp`);に沿わせるようパス\code(`p`);を変形することができます。パス\code(`p`);は座標\code(`(0pt, 0pt)`);から\code(`x > 0`);方向に配置される必要があり、この時直線\code(`x = 0`);を未完パス\code(`pp`);に合わせるように変形します。
+             }
+             +p {
+                 以下は黒いパスを赤い未完パスを用いて変形し青いパスを得る例です。
+             }
+             +code(```
+ XPath.(
+     let pp = start-path (0pt, 0pt)
+         |> bezier-to (0cm, 0cm) (3cm, 3cm) (5cm, 3cm)
+         |> bezier-to (8cm, 3cm) (10cm, 0cm) (10cm, 0cm)
+     in
+     let p = start-path (0pt, 0pt)
+        |> bezier-to (0cm, 1cm) (1cm, 1cm) (1cm, 0cm)
+        |> bezier-to (1cm, -1cm) (2cm, -1cm) (2cm, 0cm)
+        |> bezier-to (2cm, 1cm) (3cm, 1cm) (3cm, 0cm)
+        |> bezier-to (3cm, -1cm) (4cm, -1cm) (4cm, 0cm)
+        |> bezier-to (4cm, 1cm) (5cm, 1cm) (5cm, 0cm)
+        |> terminate-path
+     in
+     [
+         p |> stroke 1pt (Color.black);
+         pp |> terminate-path |> stroke 1pt (Color.red);
+         p |> deformate-path 1pt pp |> stroke 2pt (Color.blue)
+     ]
+ )
+             ```);
+             +test-path (5pt) (
+                 XPath.(
+                     let pp = start-path (0pt, 0pt)
+                         |> bezier-to (0cm, 0cm) (3cm, 3cm) (5cm, 3cm)
+                         |> bezier-to (8cm, 3cm) (10cm, 0cm) (10cm, 0cm)
+                     in
+                     let p = start-path (0pt, 0pt)
+                        |> bezier-to (0cm, 1cm) (1cm, 1cm) (1cm, 0cm)
+                        |> bezier-to (1cm, -1cm) (2cm, -1cm) (2cm, 0cm)
+                        |> bezier-to (2cm, 1cm) (3cm, 1cm) (3cm, 0cm)
+                        |> bezier-to (3cm, -1cm) (4cm, -1cm) (4cm, 0cm)
+                        |> bezier-to (4cm, 1cm) (5cm, 1cm) (5cm, 0cm)
+                        |> terminate-path
+                     in
+                     [
+                         p |> stroke 1pt (Color.black);
+                         pp |> terminate-path |> stroke 1pt (Color.red);
+                         p |> deformate-path 1pt pp |> stroke 2pt (Color.blue)
+                     ]
+                 )
+             );
         >
      >
      +chapter {\code(`xpath-gr`); の機能} <

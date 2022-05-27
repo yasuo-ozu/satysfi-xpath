@@ -310,8 +310,15 @@ end = struct
             let x = length-max x 0pt in
             let l = XPathRail.len-to-loc delta (x *' m) r in
             let (x1, y1) = XPathRail.loc-to-point l in
-            let (xd, yd) = XPathRail.get-derivative l r
-                |> point-perp |> point-normalize y in
+            let (xd, yd) = if length-abs y <' delta then
+                (0pt, 0pt)
+            else
+                let pd = XPathRail.get-derivative l r in
+                if length-abs (point-norm pd) <' delta then
+                    (0pt, 0pt)
+                else
+                    pd |> point-perp |> point-normalize y
+            in
             (x1 +' xd, y1 +' yd)
         ) in
         deformate-path-by-func f p
