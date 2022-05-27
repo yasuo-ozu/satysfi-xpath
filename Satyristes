@@ -3,7 +3,7 @@
 
 (library
   (name "xpath")
-  (version "0.2.0")
+  (version "0.3.0")
   (sources
     (
      (package "util.satyh" "./shared/util.satyh")
@@ -21,7 +21,7 @@
 
 (library
   (name "xpath-gr")
-  (version "0.2.0")
+  (version "0.3.0")
   (sources
     (
      (packageDir "gr")
@@ -39,7 +39,7 @@
 
 (libraryDoc
   (name "xpath-doc")
-  (version "0.2.0")
+  (version "0.3.0")
   (workingDirectory "./doc/")
   (build
     (
